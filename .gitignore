@@ -1,0 +1,11 @@
+# Ignore common Python & Poetry files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+dist/
+build/
+*.egg-info
+.env
+
+**/.history
