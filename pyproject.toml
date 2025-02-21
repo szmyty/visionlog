@@ -1,10 +1,13 @@
 [tool.poetry]
 name = "visionlog"
-version = "0.1.0"
+version = "0.1.1"
 description = "A universal structured logging library for analytics tracking"
 authors = ["Alan Szmyt <szmyty@gmail.com>"]
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/szmyty/visionlog"
+homepage = "https://github.com/szmyty/visionlog"
+documentation = "https://github.com/szmyty/visionlog#readme"
 
 [tool.poetry.dependencies]
 python = "^3.8"
@@ -14,6 +17,8 @@ orjson = "^3.8.1"
 opentelemetry-api = "^1.15.0"
 opentelemetry-sdk = "^1.15.0"
 click = "^8.1.3"
+device-detector = "^5.0.1"
+requests = "^2.32.3"
 
 [tool.poetry.scripts]
 visionlog-cli = "visionlog.cli:log"
@@ -21,4 +26,3 @@ visionlog-cli = "visionlog.cli:log"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-
