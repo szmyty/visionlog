@@ -32,6 +32,14 @@ pip install visionlog[tracing]
 poetry add visionlog --extras tracing
 ```
 
+### **Install with device detection support**
+
+```sh
+pip install visionlog[device]
+# or
+poetry add visionlog --extras device
+```
+
 ---
 
 ## 🚀 **Usage**
