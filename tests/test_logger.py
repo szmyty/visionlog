@@ -68,6 +68,32 @@ def test_get_device_info_no_agent():
     assert info["browser_version"] == ""
 
 
+def test_get_device_info_missing_package_raises():
+    """Verifies that an ImportError is raised when user_agent is provided but DeviceDetector is not installed."""
+    import visionlog.visionlog as vl_module
+
+    original = vl_module.DeviceDetector
+    try:
+        vl_module.DeviceDetector = None
+        with pytest.raises(ImportError, match="pip install visionlog\\[device\\]"):
+            get_device_info(user_agent="Mozilla/5.0")
+    finally:
+        vl_module.DeviceDetector = original
+
+
+def test_get_device_info_missing_package_no_agent_ok():
+    """Verifies that no error is raised when DeviceDetector is missing but no user_agent is given."""
+    import visionlog.visionlog as vl_module
+
+    original = vl_module.DeviceDetector
+    try:
+        vl_module.DeviceDetector = None
+        info = get_device_info(user_agent=None)
+        assert isinstance(info, dict)
+    finally:
+        vl_module.DeviceDetector = original
+
+
 def test_get_public_ip_failure():
     """Mocks a network failure and verifies graceful fallback to None with a warning."""
     with patch("visionlog.visionlog.requests.get", side_effect=requests.RequestException("network error")):

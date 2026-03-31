@@ -6,8 +6,12 @@ import orjson
 import uuid
 import requests
 import platform
-from device_detector import DeviceDetector
 from typing import Optional, Union
+
+try:
+    from device_detector import DeviceDetector
+except ImportError:
+    DeviceDetector = None
 
 def serialize_json(record, *args, **kwargs):
     """Serialize logs using orjson for high-performance JSON output."""
@@ -38,7 +42,12 @@ def get_geo_info(ip: str):
 
 def get_device_info(user_agent: Optional[str] = None):
     """Extracts detailed device details from user-agent string."""
-    device = DeviceDetector(user_agent).parse() if user_agent else None
+    if user_agent is not None and DeviceDetector is None:
+        raise ImportError(
+            "Device detection requires the 'device-detector' package. "
+            "Install it with: pip install visionlog[device]"
+        )
+    device = DeviceDetector(user_agent).parse() if user_agent and DeviceDetector else None
 
     return {
         "device_type": device.device_type() if device else platform.system(),
