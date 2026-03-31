@@ -1,0 +1,517 @@
+================================================================================
+PRODUCTION READINESS AUDIT
+================================================================================
+Repository   : szmyty/visionlog
+Audit Date   : 2026-03-31T18:04:54Z
+Auditor      : GitHub Copilot (automated baseline audit)
+Package      : visionlog 0.1.1
+Description  : A universal structured logging library for analytics tracking
+Language     : Python (^3.8)
+Build System : Poetry
+================================================================================
+
+EXECUTIVE SUMMARY
+-----------------
+visionlog is a small Python logging utility that wraps structlog with optional
+metadata enrichment (geo-IP, device detection, user identity). The codebase is
+minimal (3 source files, ~135 LOC) but is not yet production-ready.
+
+Key blockers are the complete absence of automated tests and CI/CD pipelines,
+bare exception handling that silently swallows errors, unused declared
+dependencies, and a missing privacy/security model around automatic IP
+collection. Several structural and documentation gaps would also need to be
+addressed before this library could be safely published and maintained at
+production scale.
+
+Overall Production Readiness Score: 2 / 10
+
+--------------------------------------------------------------------------------
+FINDINGS
+--------------------------------------------------------------------------------
+
+## CATEGORY 1 — REPOSITORY STRUCTURE
+--------------------------------------
+
+[CRITICAL] TST-001 — No test suite exists
+  Files   : (none)
+  Detail  : There is no `tests/` directory and no test files anywhere in the
+            repository. Any change to the library has no safety net. Automated
+            testing is a hard requirement for production libraries.
+  Action  : Create a `tests/` directory. Add unit tests for `get_logger`,
+            `add_common_fields`, `get_device_info`, `serialize_json`, and the
+            CLI. Use pytest as the test runner and add it as a dev dependency.
+
+[WARNING] STR-001 — No `tests/` or `docs/` directories present
+  Files   : /
+  Detail  : The project layout is missing standard directories expected of a
+            Python package: `tests/`, `docs/`, `.github/workflows/`.
+  Action  : Add `tests/` for pytest, `docs/` if Sphinx/MkDocs documentation is
+            planned, and `.github/workflows/` for CI automation.
+
+[WARNING] STR-002 — `__main__` block in library module
+  Files   : visionlog/visionlog.py:120-135
+  Detail  : A `if __name__ == "__main__":` block inside a library module is
+            unconventional and can create confusion. It also makes a live
+            network request (IP + geo lookup) during import-time testing.
+  Action  : Remove the block from `visionlog.py`. Move any demo/smoke test to
+            `examples/basic_usage.py` or a dedicated `examples/` script.
+
+[MINOR]   STR-003 — Module name shadows package name
+  Files   : visionlog/visionlog.py
+  Detail  : The inner module file `visionlog/visionlog.py` has the same name as
+            the package itself. This creates a redundant import path
+            (`visionlog.visionlog`) and can confuse IDEs and type checkers.
+  Action  : Rename `visionlog/visionlog.py` to `visionlog/logger.py` and update
+            `__init__.py` accordingly.
+
+[MINOR]   STR-004 — No CHANGELOG file
+  Files   : /
+  Detail  : There is no CHANGELOG, HISTORY, or release notes file. Consumers of
+            the library have no structured way to understand what changed between
+            versions.
+  Action  : Add `CHANGELOG.md` using Keep a Changelog format. Automate updates
+            via `git-cliff` or similar tooling.
+
+## CATEGORY 2 — CODE QUALITY
+------------------------------
+
+[CRITICAL] CQ-001 — Bare `except:` clauses swallow all exceptions silently
+  Files   : visionlog/visionlog.py:19, visionlog/visionlog.py:33
+  Detail  : Both `get_public_ip` and `get_geo_info` use bare `except:` blocks
+            that catch all exceptions including `KeyboardInterrupt`,
+            `SystemExit`, and `MemoryError`. Network failures, timeouts, and
+            JSON parsing errors are silently discarded. This masks real bugs and
+            makes diagnosing issues in production impossible.
+  Action  : Replace with `except (requests.RequestException, KeyError, ValueError):`
+            and log a warning before returning the fallback value. Consider
+            using `requests.exceptions.Timeout` with explicit timeouts.
+
+[WARNING] CQ-002 — No request timeouts on external HTTP calls
+  Files   : visionlog/visionlog.py:18, visionlog/visionlog.py:25
+  Detail  : Calls to `api64.ipify.org` and `ipinfo.io` have no `timeout`
+            parameter. In production, this can cause indefinite hangs when the
+            external service is slow or unreachable, blocking the calling thread.
+  Action  : Add `timeout=5` (or a configurable value) to all `requests.get`
+            calls.
+
+[WARNING] CQ-003 — `add_common_fields` hardcodes "visionlog" as `app_name`
+  Files   : visionlog/visionlog.py:54
+  Detail  : The `app_name` field is always set to "visionlog" regardless of the
+            `service_name` argument passed to `get_logger`. This produces
+            misleading metadata for any caller that passes their own service
+            name.
+  Action  : Either remove the hardcoded default or propagate `service_name`
+            into `add_common_fields` via a closure or structlog context variable.
+
+[WARNING] CQ-004 — Structlog `cache_logger_on_first_use=True` conflicts with dynamic binding
+  Files   : visionlog/visionlog.py:91
+  Detail  : With `cache_logger_on_first_use=True`, the processor chain is frozen
+            after the first log call. Calling `logger.bind(...)` after the first
+            use will silently have no effect. This is a known structlog gotcha.
+  Action  : Set `cache_logger_on_first_use=False` or document the limitation
+            clearly. For most single-call `get_logger` usages this is fine, but
+            it should be explicit.
+
+[WARNING] CQ-005 — loguru is imported but functionally unused
+  Files   : visionlog/visionlog.py:3, visionlog/visionlog.py:78-79
+  Detail  : loguru is listed as a dependency and imported, but the only use is
+            removing the default sink and adding a `sys.stdout` sink without any
+            format. structlog is then used as the actual logging facade. The
+            loguru setup has no visible effect on the output and adds confusion.
+  Action  : Either remove loguru entirely (and the related setup code) or
+            explicitly integrate it as a structlog renderer backend. If loguru
+            is kept, document its role.
+
+[MINOR]   CQ-006 — `get_logger` reconfigures structlog globally on every call
+  Files   : visionlog/visionlog.py:81-91
+  Detail  : `structlog.configure(...)` is called every time `get_logger()` is
+            invoked. This mutates a global singleton and is not thread-safe.
+            In multi-threaded applications, concurrent calls to `get_logger()`
+            can produce inconsistent processor chains.
+  Action  : Call `structlog.configure` once at module import time, not inside
+            `get_logger`. Move logger construction (binding) into a separate
+            helper if needed.
+
+[MINOR]   CQ-007 — `__init__.py` exports only one symbol without `__all__`
+  Files   : visionlog/__init__.py
+  Detail  : The public API is not declared explicitly. Without `__all__`, any
+            symbol imported at module level becomes part of the public API,
+            making it easy to accidentally expose internal helpers.
+  Action  : Add `__all__ = ["get_logger"]` to `visionlog/__init__.py`.
+
+## CATEGORY 3 — TYPING & INTERFACES
+--------------------------------------
+
+[CRITICAL] TYP-001 — `ip_address` parameter type is incorrect
+  Files   : visionlog/visionlog.py:62
+  Detail  : The parameter is declared as `ip_address: Optional[str] = None`
+            but the code explicitly handles the case where `ip_address is True`
+            (line 103). `Optional[str]` does not include `bool`, so type
+            checkers will flag this as unreachable and callers will not know
+            they can pass `True`.
+  Action  : Change the type annotation to `Union[bool, str, None]` and update
+            the docstring example to match.
+
+[WARNING] TYP-002 — Return types missing on all public functions
+  Files   : visionlog/visionlog.py (all functions), visionlog/cli.py
+  Detail  : None of the functions have return type annotations. This limits
+            IDE autocompletion, makes the public API harder to understand, and
+            prevents mypy from catching type errors.
+  Action  : Add return type annotations:
+            - `serialize_json` → `str`
+            - `get_public_ip` → `Optional[str]`
+            - `get_geo_info` → `Dict[str, str]`
+            - `get_device_info` → `Dict[str, str]`
+            - `add_common_fields` → `Dict[str, Any]`
+            - `get_logger` → `structlog.stdlib.BoundLogger`
+
+[WARNING] TYP-003 — No `py.typed` marker file
+  Files   : visionlog/
+  Detail  : PEP 561 requires a `py.typed` marker file for packages that
+            distribute inline type information. Without it, mypy and pyright
+            will ignore the type hints when the package is installed.
+  Action  : Create an empty `visionlog/py.typed` file and add
+            `include = ["visionlog/py.typed"]` to pyproject.toml.
+
+[MINOR]   TYP-004 — No mypy or pyright configuration
+  Files   : pyproject.toml
+  Detail  : There is no `[tool.mypy]` or `pyrightconfig.json` section. Static
+            type checking cannot be consistently run without a baseline
+            configuration.
+  Action  : Add a `[tool.mypy]` section to `pyproject.toml` with at minimum:
+            `strict = false`, `ignore_missing_imports = true`, and
+            `python_version = "3.8"`.
+
+## CATEGORY 4 — DOCUMENTATION
+-------------------------------
+
+[WARNING] DOC-001 — README lacks output examples
+  Files   : README.md
+  Detail  : The README shows how to call `get_logger` but never shows example
+            JSON output. New users have no way to evaluate the library without
+            running it first.
+  Action  : Add a "Sample Output" section with a code block showing example
+            structured JSON log lines.
+
+[WARNING] DOC-002 — README references OpenTelemetry integration that does not exist
+  Files   : README.md:55-66
+  Detail  : The README includes an "Advanced Usage" section showing OpenTelemetry
+            tracer integration, but the code does not implement any
+            OpenTelemetry instrumentation. `opentelemetry-api` and
+            `opentelemetry-sdk` are listed as dependencies but are not imported
+            anywhere in the codebase.
+  Action  : Either implement the OpenTelemetry integration or remove the
+            misleading documentation section and the unused dependencies.
+
+[WARNING] DOC-003 — `cli.py` has no module-level docstring
+  Files   : visionlog/cli.py
+  Detail  : The CLI entry point has no docstring. The click `--help` output
+            will lack context about the tool's purpose.
+  Action  : Add a module-level docstring and a `help=` string to the
+            `@click.command()` decorator.
+
+[MINOR]   DOC-004 — No CONTRIBUTING.md
+  Files   : /
+  Detail  : There are no contribution guidelines. Potential contributors have
+            no instructions on branching, PR process, code style, or running
+            tests.
+  Action  : Add `CONTRIBUTING.md` covering: local setup, running tests, code
+            style, PR workflow, and issue reporting.
+
+[MINOR]   DOC-005 — No CODE_OF_CONDUCT.md
+  Files   : /
+  Detail  : Open source community health files (CODE_OF_CONDUCT, SECURITY.md)
+            are absent.
+  Action  : Add `CODE_OF_CONDUCT.md` (Contributor Covenant) and `SECURITY.md`
+            for responsible disclosure policy.
+
+## CATEGORY 5 — DEVELOPER EXPERIENCE (DX)
+-------------------------------------------
+
+[WARNING] DX-001 — No linting or formatting configuration
+  Files   : pyproject.toml
+  Detail  : There is no ruff, flake8, black, isort, or pylint configuration.
+            Code style is unenforced and inconsistent. Without tooling, code
+            quality will drift between contributors.
+  Action  : Add `[tool.ruff]` to `pyproject.toml` with sensible defaults.
+            Add ruff and black as dev dependencies. Optionally add a pre-commit
+            config (`.pre-commit-config.yaml`).
+
+[WARNING] DX-002 — No dev dependency group defined
+  Files   : pyproject.toml
+  Detail  : There is no `[tool.poetry.group.dev.dependencies]` section.
+            Development tools (pytest, ruff, mypy, black, pre-commit) are not
+            declared anywhere, making `poetry install` insufficient for
+            development.
+  Action  : Add a `[tool.poetry.group.dev.dependencies]` section with at
+            minimum: `pytest`, `pytest-cov`, `ruff`, `mypy`.
+
+[MINOR]   DX-003 — No Makefile or task runner
+  Files   : /
+  Detail  : There are no `Makefile`, `justfile`, or `taskfile` entries to
+            provide shortcuts for common developer tasks (lint, test, build,
+            publish).
+  Action  : Add a `Makefile` with targets: `lint`, `test`, `build`, `publish`,
+            `clean`.
+
+[MINOR]   DX-004 — No `.python-version` file
+  Files   : /
+  Detail  : Without a `.python-version` file, pyenv and other version managers
+            cannot automatically select the correct Python version for the
+            project.
+  Action  : Add `.python-version` specifying the minimum supported version
+            (e.g., `3.8`).
+
+## CATEGORY 6 — TESTING
+-------------------------
+
+[CRITICAL] TEST-001 — Zero test coverage
+  Files   : (none)
+  Detail  : The repository has no tests of any kind: no unit tests, no
+            integration tests, no smoke tests. This is the single most
+            significant production readiness gap.
+  Action  : Implement the following test cases as a minimum baseline:
+            1. `test_serialize_json`: verify JSON output format and newline.
+            2. `test_add_common_fields`: verify log_id, app_name, log_level.
+            3. `test_get_logger_basic`: verify logger returns a BoundLogger
+               without network calls.
+            4. `test_get_logger_with_user_id`: verify user_id binding.
+            5. `test_get_device_info_no_agent`: verify fallback to platform info.
+            6. `test_cli_log`: verify CLI produces output using click.testing.
+            7. `test_get_public_ip_failure`: verify fallback when network fails.
+            Use `pytest`, `pytest-cov` (target ≥80% coverage), and
+            `unittest.mock` to mock network calls.
+
+[WARNING] TEST-002 — No pytest configuration
+  Files   : pyproject.toml
+  Detail  : Even if tests were added, there is no `[tool.pytest.ini_options]`
+            section to define testpaths, coverage settings, or verbosity.
+  Action  : Add `[tool.pytest.ini_options]` with `testpaths = ["tests"]` and
+            `addopts = "--cov=visionlog --cov-report=term-missing"`.
+
+## CATEGORY 7 — CI/CD
+-----------------------
+
+[CRITICAL] CICD-001 — No CI/CD pipeline
+  Files   : (none — .github/workflows/ does not exist)
+  Detail  : There are no GitHub Actions workflows. No automated testing, no
+            linting, no build validation, and no publish pipeline. Any PR can
+            introduce breaking changes without automated detection.
+  Action  : Create at minimum:
+            - `.github/workflows/ci.yml`: runs lint (ruff) and tests (pytest)
+              on every push and pull_request.
+            - `.github/workflows/publish.yml`: publishes to PyPI on version
+              tags (`v*`) using trusted publishing (OIDC).
+
+[WARNING] CICD-002 — No branch protection or status checks
+  Files   : GitHub repo settings (not a file)
+  Detail  : Without a CI workflow, no status checks can be required on PRs,
+            meaning broken code can be merged to main without review.
+  Action  : Once CI is added, enable branch protection on `main` requiring
+            status checks to pass before merging.
+
+## CATEGORY 8 — PACKAGING & DISTRIBUTION
+------------------------------------------
+
+[WARNING] PKG-001 — Unused declared dependencies (opentelemetry)
+  Files   : pyproject.toml:17-18
+  Detail  : `opentelemetry-api` and `opentelemetry-sdk` are declared as
+            production dependencies but are never imported in the source code.
+            This adds unnecessary install weight for all users of the library
+            and can cause version conflicts.
+  Action  : Remove `opentelemetry-api` and `opentelemetry-sdk` from
+            `[tool.poetry.dependencies]`. If OpenTelemetry integration is
+            planned, add it as an optional extra dependency group.
+
+[WARNING] PKG-002 — No classifiers in pyproject.toml
+  Files   : pyproject.toml
+  Detail  : The package has no PyPI classifiers (e.g., Development Status,
+            Topic, Framework). Classifiers improve discoverability on PyPI and
+            communicate maturity level to users.
+  Action  : Add classifiers to `[tool.poetry]`:
+            - `"Development Status :: 3 - Alpha"`
+            - `"Intended Audience :: Developers"`
+            - `"Topic :: Software Development :: Libraries :: Python Modules"`
+            - `"Topic :: System :: Logging"`
+            - `"License :: OSI Approved :: MIT License"`
+
+[WARNING] PKG-003 — No keywords in pyproject.toml
+  Files   : pyproject.toml
+  Detail  : Missing `keywords` field. This limits discoverability on PyPI
+            search.
+  Action  : Add `keywords = ["logging", "structured", "analytics", "json",
+            "observability"]` to `[tool.poetry]`.
+
+[MINOR]   PKG-004 — No `include`/`exclude` patterns for package files
+  Files   : pyproject.toml
+  Detail  : There is no explicit `include` or `exclude` configuration to ensure
+            that only the correct files are bundled in the distribution wheel
+            (e.g., excluding `examples/`, `audits/`, `tests/`).
+  Action  : Add `packages = [{include = "visionlog"}]` to `[tool.poetry]` so
+            the build includes exactly the package source and nothing else.
+
+[MINOR]   PKG-005 — No versioning strategy or automation
+  Files   : pyproject.toml
+  Detail  : There is no `bump2version`, `python-semantic-release`, or similar
+            tooling for managing version bumps. Version `0.1.1` is hardcoded.
+  Action  : Adopt semantic versioning with `python-semantic-release` or
+            `commitizen` to automate version bumps and changelog generation
+            from Conventional Commits.
+
+## CATEGORY 9 — DEPENDENCIES
+------------------------------
+
+[CRITICAL] DEP-001 — Privacy risk: automatic IP collection without consent
+  Files   : visionlog/visionlog.py:15-20, 58-66
+  Detail  : The library can automatically collect and attach the caller's
+            public IP address to every log line. IP addresses are Personally
+            Identifiable Information (PII) under GDPR, CCPA, and similar
+            regulations. There is no privacy notice, consent mechanism, or
+            documentation of this behaviour.
+  Action  : At minimum, set `ip_address` default to `None` (it already is),
+            but add explicit docstring warnings about PII implications. Consider
+            adding a `privacy_mode: bool = True` flag that disables all PII
+            enrichment (IP, geo, device) by default.
+
+[WARNING] DEP-002 — `device-detector` is a heavy dependency for an optional feature
+  Files   : pyproject.toml:21, visionlog/visionlog.py:8
+  Detail  : `device-detector` (PyPI: `device-detector`) bundles large YAML
+            device databases. It is only used when `device_info=True` or
+            `user_agent` is provided. Making all users pay this install cost
+            unconditionally is poor library design.
+  Action  : Make `device-detector` an optional extra:
+            `[tool.poetry.extras]`
+            `device = ["device-detector"]`
+            Guard the import with a try/except and raise `ImportError` with
+            install instructions when the user enables `device_info=True`.
+
+[WARNING] DEP-003 — `requests` is a heavy transitive dependency; no timeout hardening
+  Files   : visionlog/visionlog.py:6
+  Detail  : The `requests` library adds significant install weight for a
+            logging utility. The two HTTP calls it makes have no timeout.
+            For a logging library that should have minimal overhead, using the
+            stdlib `urllib.request` would be lighter.
+  Action  : Consider replacing `requests` with stdlib `urllib.request` for
+            the two simple GET calls, or at minimum add `timeout=` parameters
+            and document the network dependency.
+
+[MINOR]   DEP-004 — No upper bound on structlog version
+  Files   : pyproject.toml:16
+  Detail  : `structlog = "^23.1.0"` allows any 23.x or 24.x version. Major
+            structlog releases (e.g., 24.x) may contain breaking API changes.
+            Poetry's `^` operator handles this correctly for semantic
+            versioning, but the constraint should be reviewed if structlog
+            makes a breaking 24.0 release.
+  Action  : Monitor structlog releases and update the constraint after
+            compatibility testing.
+
+## CATEGORY 10 — PRODUCTION READINESS
+---------------------------------------
+
+[CRITICAL] PROD-001 — Library is not safe to use in production
+  Files   : (all)
+  Detail  : The combination of zero tests, no CI, swallowed exceptions, a
+            broken type annotation (ip_address: Optional[str] when True is
+            also accepted), unused dependencies, and undocumented PII
+            collection makes this library unsuitable for production use.
+  Action  : Address CRITICAL findings (TST-001, TEST-001, CICD-001, CQ-001,
+            TYP-001, DEP-001) before considering any production deployment.
+
+[WARNING] PROD-002 — No logging of internal errors
+  Files   : visionlog/visionlog.py
+  Detail  : Failures in `get_public_ip()` and `get_geo_info()` are silently
+            discarded. In production, operators need to know when enrichment
+            is degraded (e.g., geo-lookup service is down).
+  Action  : Log a warning (using Python's stdlib `warnings.warn` or the
+            logger itself) when an enrichment step fails, so operators can
+            detect degraded enrichment without crashing the application.
+
+[WARNING] PROD-003 — No graceful degradation documentation
+  Files   : README.md, visionlog/visionlog.py
+  Detail  : The library makes outbound network calls during logger creation.
+            There is no documentation of what happens in air-gapped
+            environments, firewalled containers, or offline CI runners.
+  Action  : Document all network calls and their fallback behaviour. Add a
+            `disable_network=True` parameter to `get_logger` that skips all
+            HTTP enrichment.
+
+--------------------------------------------------------------------------------
+FINDINGS SUMMARY
+--------------------------------------------------------------------------------
+
+  Severity   Count   Finding IDs
+  ---------  ------  ---------------------------------------------------------
+  CRITICAL   5       TST-001, TEST-001, CICD-001, CQ-001, TYP-001, DEP-001,
+                     PROD-001
+  WARNING    16      STR-001, STR-002, CQ-002–CQ-005, TYP-002–TYP-003,
+                     DOC-001–DOC-003, DX-001–DX-002, TEST-002, CICD-002,
+                     PKG-001–PKG-003, DEP-002–DEP-003, PROD-002–PROD-003
+  MINOR      11      STR-003–STR-004, CQ-006–CQ-007, TYP-004,
+                     DOC-004–DOC-005, DX-003–DX-004, PKG-004–PKG-005, DEP-004
+
+  TOTAL      32
+
+--------------------------------------------------------------------------------
+PRIORITIZED IMPROVEMENT ROADMAP
+--------------------------------------------------------------------------------
+
+Phase 1 — Critical Blockers (fix before any production use)
+  1. [TEST-001 / TST-001]  Add pytest test suite with ≥80% coverage
+  2. [CICD-001]            Add GitHub Actions CI workflow (lint + test)
+  3. [CQ-001]              Replace bare `except:` with specific exception types
+  4. [TYP-001]             Fix `ip_address` type annotation to Union[bool, str, None]
+  5. [DEP-001]             Document PII implications; add privacy safeguard flag
+  6. [PROD-001]            Do not publish to PyPI until Phase 1 is complete
+
+Phase 2 — High-Impact Improvements (complete within first sprint)
+  7. [PKG-001]             Remove unused opentelemetry-api/sdk dependencies
+  8. [DOC-002]             Remove or implement OpenTelemetry integration
+  9. [CQ-002]              Add timeouts to all requests.get calls
+ 10. [CQ-005]              Remove or properly integrate loguru
+ 11. [CQ-003]              Fix app_name hardcoding in add_common_fields
+ 12. [TYP-002]             Add return type annotations to all public functions
+ 13. [DX-001]              Add ruff + black configuration to pyproject.toml
+ 14. [DX-002]              Add dev dependency group to pyproject.toml
+ 15. [PKG-002]             Add PyPI classifiers
+
+Phase 3 — Polish and Maintainability (before 1.0.0 release)
+ 16. [STR-003]             Rename visionlog/visionlog.py → visionlog/logger.py
+ 17. [STR-002]             Remove __main__ block from library module
+ 18. [CQ-006]              Move structlog.configure out of get_logger
+ 19. [TYP-003]             Add py.typed marker file (PEP 561)
+ 20. [DOC-001]             Add sample JSON output to README
+ 21. [DOC-004/005]         Add CONTRIBUTING.md and CODE_OF_CONDUCT.md
+ 22. [STR-004]             Add CHANGELOG.md
+ 23. [PKG-004]             Add packages include/exclude to pyproject.toml
+ 24. [PKG-005]             Adopt semantic versioning tooling
+ 25. [DEP-002]             Make device-detector an optional extra dependency
+ 26. [PROD-003]            Document network calls and add disable_network flag
+
+--------------------------------------------------------------------------------
+PRODUCTION READINESS ASSESSMENT
+--------------------------------------------------------------------------------
+
+Component                     Status    Notes
+----------------------------  --------  ----------------------------------------
+Source code compiles/imports  PASS      No import errors detected
+Type safety                   FAIL      ip_address type incorrect; no return types
+Exception handling            FAIL      Bare except clauses in two functions
+Test coverage                 FAIL      0% — no tests exist
+CI/CD pipeline                FAIL      No workflows present
+Dependency hygiene            FAIL      2 unused runtime deps (opentelemetry)
+Documentation completeness    PARTIAL   README exists; misleading OTel section
+PyPI publish readiness        FAIL      Missing classifiers, py.typed, tests
+Privacy/security model        FAIL      Undocumented PII collection (IP, geo)
+Versioning strategy           PARTIAL   Semantic version in pyproject.toml,
+                                        no automation
+
+OVERALL VERDICT: NOT PRODUCTION READY
+
+The library demonstrates a promising concept and clean API design, but requires
+significant foundational work before it can be considered production-grade.
+The critical path is: add tests → add CI → fix exception handling → address
+privacy concerns → clean up dependencies → publish.
+
+================================================================================
+END OF AUDIT
+================================================================================
