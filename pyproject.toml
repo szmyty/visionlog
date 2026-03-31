@@ -26,6 +26,7 @@ visionlog-cli = "visionlog.cli:log"
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4"
 pytest-mock = "^3.11"
+ruff = ">=0.1.0"
 
 [build-system]
 requires = ["poetry-core"]
