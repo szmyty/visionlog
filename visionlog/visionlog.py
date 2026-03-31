@@ -1,4 +1,5 @@
 import sys
+import warnings
 import structlog
 import loguru
 import orjson
@@ -15,14 +16,15 @@ def serialize_json(record, *args, **kwargs):
 def get_public_ip():
     """Fetches the user's public IP address."""
     try:
-        return requests.get("https://api64.ipify.org?format=json").json()["ip"]
-    except:
+        return requests.get("https://api64.ipify.org?format=json", timeout=5).json()["ip"]
+    except (requests.RequestException, KeyError, ValueError) as error:
+        warnings.warn(f"Failed to fetch public IP: {error}")
         return None
 
 def get_geo_info(ip: str):
     """Fetches geo-location & ISP info for a given IP address."""
     try:
-        response = requests.get(f"https://ipinfo.io/{ip}/json").json()
+        response = requests.get(f"https://ipinfo.io/{ip}/json", timeout=5).json()
         return {
             "city": response.get("city", ""),
             "region": response.get("region", ""),
@@ -30,7 +32,8 @@ def get_geo_info(ip: str):
             "timezone": response.get("timezone", ""),
             "org": response.get("org", ""),  # ISP / Organization
         }
-    except:
+    except (requests.RequestException, KeyError, ValueError) as error:
+        warnings.warn(f"Failed to fetch geo info for IP {ip}: {error}")
         return {}
 
 def get_device_info(user_agent: Optional[str] = None):
