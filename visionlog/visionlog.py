@@ -7,7 +7,7 @@ import uuid
 import requests
 import platform
 from device_detector import DeviceDetector
-from typing import Optional
+from typing import Optional, Union
 
 def serialize_json(record, *args, **kwargs):
     """Serialize logs using orjson for high-performance JSON output."""
@@ -62,7 +62,7 @@ def get_logger(
     service_name="visionlog",
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
-    ip_address: Optional[str] = None,
+    ip_address: Union[bool, str, None] = None,
     device_info: bool = False,
     user_agent: Optional[str] = None,
     geo_info: bool = False
@@ -72,7 +72,10 @@ def get_logger(
 
     - `user_id`: Tracks the user identity
     - `session_id`: Tracks user session
-    - `ip_address`: True (autodetect), None (ignore), or manual string
+    - `ip_address`: Controls IP address logging:
+        - ``None`` → do nothing (default)
+        - ``True`` → auto-fetch the public IP via an external service
+        - ``str`` → use the provided IP address string directly
     - `device_info`: If True, extracts detailed device data
     - `user_agent`: Custom user-agent string for parsing device details
     - `geo_info`: If True, fetches IP geo-location (city, country, ISP, timezone)
