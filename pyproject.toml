@@ -23,6 +23,10 @@ requests = "^2.32.3"
 [tool.poetry.scripts]
 visionlog-cli = "visionlog.cli:log"
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4"
+pytest-mock = "^3.11"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
