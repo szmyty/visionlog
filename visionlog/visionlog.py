@@ -58,6 +58,23 @@ def add_common_fields(logger, method_name, event_dict):
     event_dict.setdefault("log_level", method_name.upper())
     return event_dict
 
+def add_otel_context(logger, method_name, event_dict):
+    """Injects OpenTelemetry trace and span IDs into log records when a span is active.
+
+    Gracefully does nothing if the ``opentelemetry`` package is not installed or
+    if there is no currently active span.
+    """
+    try:
+        from opentelemetry import trace  # noqa: PLC0415
+        span = trace.get_current_span()
+        ctx = span.get_span_context()
+        if ctx.is_valid:
+            event_dict["trace_id"] = format(ctx.trace_id, "032x")
+            event_dict["span_id"] = format(ctx.span_id, "016x")
+    except ImportError:
+        pass
+    return event_dict
+
 def get_logger(
     service_name="visionlog",
     user_id: Optional[str] = None,
@@ -65,7 +82,8 @@ def get_logger(
     ip_address: Union[bool, str, None] = None,
     device_info: bool = False,
     user_agent: Optional[str] = None,
-    geo_info: bool = False
+    geo_info: bool = False,
+    enable_tracing: bool = False,
 ):
     """
     Creates a structured logger with optional default fields.
@@ -79,18 +97,24 @@ def get_logger(
     - `device_info`: If True, extracts detailed device data
     - `user_agent`: Custom user-agent string for parsing device details
     - `geo_info`: If True, fetches IP geo-location (city, country, ISP, timezone)
+    - `enable_tracing`: If True, injects OpenTelemetry trace/span IDs into every log
+      record when a span is active. Requires ``visionlog[tracing]`` to be installed.
     """
 
     loguru.logger.remove()
     loguru.logger.add(sys.stdout, format="{message}", serialize=False)
-    
+
+    processors = [
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.add_log_level,
+        add_common_fields,
+    ]
+    if enable_tracing:
+        processors.append(add_otel_context)
+    processors.append(structlog.processors.JSONRenderer(serializer=serialize_json))
+
     structlog.configure(
-        processors=[
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.add_log_level,
-            add_common_fields,
-            structlog.processors.JSONRenderer(serializer=serialize_json),
-        ],
+        processors=processors,
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
