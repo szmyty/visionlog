@@ -167,6 +167,42 @@ useful when `privacy_mode=False` but you still need to suppress network activity
 
 ---
 
+## 🧰 Development Tasks
+
+This project uses [Taskfile](https://taskfile.dev) for development workflows.
+
+Install Task:
+
+**macOS / Linux (Homebrew):**
+```bash
+brew install go-task/tap/go-task
+```
+
+**Windows (Chocolatey):**
+```bash
+choco install go-task
+```
+
+**Windows (Scoop):**
+```bash
+scoop install task
+```
+
+**Linux (snap):**
+```bash
+snap install task --classic
+```
+
+Or download a binary directly from the [Taskfile releases page](https://github.com/go-task/task/releases).
+
+List available tasks:
+
+```bash
+task --list
+```
+
+---
+
 ## 🛠 **Development & Contribution**
 
 1. Clone the repository:
