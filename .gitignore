@@ -8,4 +8,9 @@ build/
 *.egg-info
 .env
 
+# Coverage artifacts
+.coverage
+htmlcov/
+coverage.xml
+
 **/.history
