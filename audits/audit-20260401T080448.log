@@ -1,0 +1,652 @@
+================================================================================
+ADVANCED QUALITY AUDIT — ARCHITECTURE, API DESIGN & EXTENSIBILITY
+================================================================================
+Repository   : szmyty/visionlog
+Audit Date   : 2026-04-01T08:04:48Z
+Auditor      : GitHub Copilot (second-pass advanced audit)
+Package      : visionlog 0.1.1
+Description  : A universal structured logging library for analytics tracking
+Language     : Python (^3.8)
+Build System : Poetry
+Prior Audit  : audit-20260331T180454.log (production readiness baseline)
+================================================================================
+
+EXECUTIVE SUMMARY
+-----------------
+This second-pass audit focuses on internal design quality, architectural
+soundness, and long-term maintainability. The baseline production-readiness
+issues flagged in audit-20260331T180454.log (missing tests, CI, bare
+exceptions, privacy model) have since been addressed. This audit assumes those
+fixes are in place and looks at the deeper structural and design questions that
+will determine whether visionlog can evolve cleanly into a mature library.
+
+The central problems found in this pass are:
+
+  1. get_logger carries 10 parameters with no grouping abstraction — it will
+     become unmaintainable as features are added and is hostile to refactoring.
+  2. structlog.configure() runs at module import time as a global side effect,
+     making it impossible to have multiple independent logger configurations in
+     the same process.
+  3. loguru is imported and reconfigured on every get_logger() call, adding
+     startup latency and creating confusing dual-framework output with no
+     documented rationale.
+  4. add_common_fields always injects app_name = "visionlog" regardless of the
+     service_name argument, silently discarding the caller's intent.
+  5. The enrichment pipeline (IP, geo, device) is entangled inside get_logger
+     with no abstraction; every new enrichment type requires modifying the same
+     function signature.
+
+Overall Architecture Quality Score: 4 / 10
+
+--------------------------------------------------------------------------------
+FINDINGS
+--------------------------------------------------------------------------------
+
+## CATEGORY 1 — API DESIGN
+----------------------------
+
+[HIGH]    API-001 — get_logger has 10 parameters with no grouping abstraction
+  Files   : visionlog/visionlog.py:123-134
+  Detail  : The public factory function accepts service_name, user_id,
+            session_id, ip_address, device_info, user_agent, geo_info,
+            enable_tracing, privacy_mode, and disable_network — ten positional
+            and keyword arguments. There is no way to construct a configuration
+            object and pass it around, store it, or reuse it across call sites.
+            Adding any new enrichment type (e.g., region, tenant_id, env) will
+            require appending yet another parameter to an already-wide function
+            signature, increasing the combinatorial test surface.
+  Action  : Introduce a LoggerConfig dataclass (or TypedDict for Python 3.8
+            compatibility) that groups related parameters into logical buckets:
+              - IdentityConfig: user_id, session_id, service_name
+              - NetworkConfig: ip_address, geo_info, disable_network
+              - DeviceConfig: device_info, user_agent
+              - PrivacyConfig: privacy_mode
+            get_logger should accept either individual kwargs (for backward
+            compatibility) or a config object. This also enables serialisation,
+            logging of the config itself, and easier testing.
+
+[HIGH]    API-002 — add_common_fields ignores service_name; always injects
+            "visionlog" as app_name
+  Files   : visionlog/visionlog.py:86-91
+  Detail  : The structlog processor add_common_fields unconditionally sets
+            event_dict["app_name"] = "visionlog". Because structlog processors
+            share no state with get_logger, the service_name argument passed
+            to get_logger is only attached as the "service" field via
+            logger.bind(service=service_name) and never reaches app_name. Users
+            who call get_logger("my-api") will always see app_name="visionlog"
+            in their logs — a silent data quality bug.
+  Action  : Either (a) rename the field from app_name to service and remove the
+            duplicate binding, or (b) pass service_name into the processor via
+            a closure or structlog's contextvars support, so that app_name
+            reflects the actual service. Option (a) is simpler and avoids the
+            two-field redundancy (service + app_name) entirely.
+
+[MEDIUM]  API-003 — serialize_json accepts *args/**kwargs but ignores them
+  Files   : visionlog/visionlog.py:16-18
+  Detail  : The signature `serialize_json(record, *args, **kwargs)` accepts
+            arbitrary extra arguments that are silently dropped. structlog's
+            JSONRenderer passes a single positional argument; the variadic
+            signature adds noise and hides the actual contract.
+  Action  : Remove the *args/**kwargs and use the minimal correct signature:
+            `serialize_json(record: Any) -> str`. Add a return type annotation.
+
+[MEDIUM]  API-004 — enable_tracing is deprecated but carries no removal
+            timeline or DeprecationWarning
+  Files   : visionlog/visionlog.py:131, 170-172
+  Detail  : The parameter enable_tracing is described as deprecated since
+            0.2.0 and documented to have "no effect", yet it emits no
+            DeprecationWarning and there is no documented target version for
+            removal. Parameters that silently do nothing erode API trust.
+  Action  : Emit `warnings.warn(..., DeprecationWarning, stacklevel=2)` when
+            enable_tracing is passed with any value. Document the removal
+            target version (e.g., "will be removed in 1.0.0") both in the
+            docstring and in CHANGELOG.md.
+
+[MINOR]   API-005 — __all__ in __init__.py exports only get_logger, hiding
+            useful public types
+  Files   : visionlog/__init__.py:3
+  Detail  : Only get_logger is exported. When users want to use
+            serialize_json, add_common_fields, or type hints for a future
+            LoggerConfig, they must import from the internal
+            visionlog.visionlog submodule — a leaky implementation detail.
+  Action  : Expand __all__ to include all symbols that are intentionally
+            public. Consider re-exporting from visionlog/__init__.py so
+            callers always use `from visionlog import X` rather than
+            `from visionlog.visionlog import X`.
+
+## CATEGORY 2 — ARCHITECTURE & MODULARITY
+-------------------------------------------
+
+[HIGH]    ARCH-001 — structlog.configure() runs at module import time as a
+            global side effect
+  Files   : visionlog/visionlog.py:110-121
+  Detail  : The call to structlog.configure() at module level executes the
+            moment the package is imported. This creates several problems:
+              (a) Any application that imports visionlog and also uses
+                  structlog directly will have its structlog configuration
+                  silently overwritten.
+              (b) Unit tests cannot test different processor chains without
+                  carefully resetting global state.
+              (c) It is impossible to instantiate two loggers with different
+                  processor pipelines in the same process.
+            This is the most architecturally significant problem in the library.
+  Action  : Move structlog.configure() inside get_logger and guard it with a
+            module-level flag (_configured = False) so it runs at most once on
+            first use. Alternatively, adopt structlog's BoundLoggerLazy pattern
+            and configure structlog per-instance rather than globally.
+            Long-term: expose a configure_visionlog() function that applications
+            can call explicitly, making the side effect opt-in rather than
+            implicit.
+
+[HIGH]    ARCH-002 — loguru is configured inside get_logger on every call
+  Files   : visionlog/visionlog.py:175-176
+  Detail  : Every call to get_logger() executes:
+              loguru.logger.remove()
+              loguru.logger.add(sys.stdout, format="{message}", serialize=False)
+            This means every logger creation re-initialises the global loguru
+            sink. In applications that create multiple loggers (e.g., per
+            request in a web framework), this repeatedly reconfigures loguru,
+            which is not thread-safe and adds latency. The output from loguru
+            and structlog will also be duplicated on stdout. The README makes
+            no mention of loguru, so the dual-framework design is undocumented
+            and likely unintentional.
+  Action  : Clarify the intended role of loguru. If the goal is fallback
+            output, move loguru configuration to a module-level initialisation
+            block (like structlog.configure) guarded by a flag, so it runs once.
+            If loguru serves no unique purpose that structlog's
+            stdlib.LoggerFactory does not already provide, remove the loguru
+            dependency entirely.
+
+[MEDIUM]  ARCH-003 — visionlog.py mixes four distinct concerns in one file
+  Files   : visionlog/visionlog.py
+  Detail  : The single module contains:
+              - HTTP utility functions (get_public_ip, get_geo_info)
+              - Device fingerprinting (get_device_info)
+              - structlog processor functions (add_common_fields, add_otel_context,
+                serialize_json)
+              - Logger factory and global configuration (get_logger,
+                structlog.configure)
+            This violates the Single Responsibility Principle. Changes to the
+            HTTP layer require touching the same file as changes to the
+            processor pipeline.
+  Action  : Split into logical submodules:
+              - visionlog/enrichers/network.py  (get_public_ip, get_geo_info)
+              - visionlog/enrichers/device.py   (get_device_info)
+              - visionlog/processors.py         (serialize_json, add_common_fields,
+                                                  add_otel_context)
+              - visionlog/logger.py             (get_logger, configure)
+            Keep visionlog/__init__.py as the public re-export surface.
+
+[MEDIUM]  ARCH-004 — if __name__ == "__main__" block in library module makes
+            live network requests
+  Files   : visionlog/visionlog.py:207-222
+  Detail  : The __main__ block inside the library module calls get_logger with
+            ip_address=True, device_info=True, and geo_info=True without
+            privacy_mode=False, meaning it would silently skip those features
+            under the default privacy_mode=True. More importantly, running
+            `python -m visionlog.visionlog` in a CI or restricted environment
+            would attempt live HTTP requests. This block was flagged in the
+            prior audit (STR-002) and should be moved.
+  Action  : Delete the __main__ block. Move the example to
+            examples/basic_usage.py (which already exists). If a smoke-test
+            entry point is needed, add a `__main__.py` at the package level
+            that the CLI can invoke.
+
+## CATEGORY 3 — DESIGN PATTERNS
+----------------------------------
+
+[HIGH]    PAT-001 — No pluggable enricher abstraction; every new field
+            requires modifying get_logger's signature
+  Files   : visionlog/visionlog.py:123-205
+  Detail  : The current design hard-codes three enrichment types (IP/geo,
+            device, OTel tracing). Adding a fourth (e.g., environment, region,
+            tenant, feature flags) requires:
+              (a) Adding new parameters to get_logger
+              (b) Adding new conditional logic inside get_logger
+              (c) Updating tests, docs, and type stubs
+            This is the open/closed principle violation — the function is not
+            closed for modification.
+  Action  : Introduce an Enricher protocol or abstract base class:
+              class Enricher(Protocol):
+                  def enrich(self, logger: BoundLogger) -> BoundLogger: ...
+            get_logger can accept an optional list of enrichers. Built-in
+            enrichers (NetworkEnricher, DeviceEnricher) live in their own
+            modules. Third-party code can provide custom enrichers without
+            touching the core API. This makes future enrichment types
+            zero-cost to add.
+
+[MEDIUM]  PAT-002 — Global singleton pattern for structlog configuration is
+            implicit and fragile
+  Files   : visionlog/visionlog.py:110-121
+  Detail  : The module-level structlog.configure() creates an implicit global
+            singleton configuration without any of the safeguards associated
+            with the Singleton pattern: no thread-safety, no reconfiguration
+            prevention, no way to reset in tests. The tests in test_tracing.py
+            already work around this by checking processor identity rather than
+            re-running configure.
+  Action  : Make the singleton explicit. A module-level _CONFIGURED flag
+            (defaulting to False) combined with a public configure() function
+            gives callers control over when the side effect fires, while still
+            preventing accidental double-configuration.
+
+[MINOR]   PAT-003 — No builder or fluent interface for incremental logger
+            construction
+  Files   : visionlog/visionlog.py:123-205
+  Detail  : get_logger returns a fully-configured BoundLogger. If a caller
+            wants to conditionally add fields (e.g., add user_id only if
+            authenticated), they must call logger.bind() manually and know the
+            internal field names. A fluent builder would express this more
+            clearly:
+              logger = (
+                  LoggerBuilder("my-api")
+                  .with_user("user_42")
+                  .with_session("sess_123")
+                  .build()
+              )
+  Action  : Consider a LoggerBuilder class as an optional ergonomic layer on
+            top of get_logger. This is a low-priority improvement but would
+            significantly improve usability for complex configurations.
+
+## CATEGORY 4 — CONFIGURATION & FLEXIBILITY
+---------------------------------------------
+
+[HIGH]    CFG-001 — Output format is hardcoded to JSON with no way to
+            configure alternative renderers
+  Files   : visionlog/visionlog.py:116
+  Detail  : structlog.processors.JSONRenderer is the only renderer used, and
+            it is hard-coded into the processor chain at import time. There is
+            no way for users to select plain-text output (useful for
+            development), logfmt output, or a custom renderer without forking
+            the library or monkey-patching structlog's global configuration.
+  Action  : Accept an optional renderer parameter in get_logger (or in a
+            configure_visionlog() function), defaulting to JSONRenderer. Ship
+            pre-built renderer options:
+              - "json"      → JSONRenderer(serializer=serialize_json)  [default]
+              - "console"   → structlog.dev.ConsoleRenderer()
+              - "logfmt"    → a custom LogfmtRenderer if desired
+            This turns a hard-coded implementation detail into a documented
+            feature.
+
+[MEDIUM]  CFG-002 — No way to inject custom structlog processors
+  Files   : visionlog/visionlog.py:110-121
+  Detail  : The processor chain [TimeStamper, add_log_level, add_common_fields,
+            add_otel_context, JSONRenderer] is fixed. Users who want to add a
+            custom field extractor, a log sampler, or a redaction processor
+            have no hook to do so.
+  Action  : Expose an extra_processors: Optional[List[Processor]] parameter
+            in configure_visionlog() that is inserted between add_otel_context
+            and the final renderer. This gives users the ability to extend the
+            pipeline without replacing the whole configuration.
+
+[MINOR]   CFG-003 — Timeout for HTTP enrichment calls is not configurable
+  Files   : visionlog/visionlog.py:30, 46
+  Detail  : The timeout for both httpx.get calls is hard-coded to 5.0 seconds.
+            This is a reasonable default but should be configurable for
+            environments where network latency varies significantly.
+  Action  : Add an http_timeout: float = 5.0 parameter to get_public_ip and
+            get_geo_info (or to the network enricher config).
+
+## CATEGORY 5 — LOGGING & OBSERVABILITY DESIGN
+-------------------------------------------------
+
+[HIGH]    OBS-001 — app_name field is static "visionlog" and duplicates the
+            "service" field without adding value
+  Files   : visionlog/visionlog.py:86-91, 178
+  Detail  : Each log record contains:
+              - "service": <value of service_name parameter>  (from logger.bind)
+              - "app_name": "visionlog"                        (from add_common_fields)
+            These are redundant. app_name is the library name, not the
+            application name, which makes the field actively misleading for
+            users running visionlog in their own application.
+  Action  : Remove the static app_name field from add_common_fields. If a
+            library-version field is desired for debugging, use a well-known
+            name such as "logger_library": "visionlog" or simply remove it.
+            The "service" field already carries the application identity.
+
+[MEDIUM]  OBS-002 — log_level is injected as a separate field but structlog
+            already includes a "level" key via add_log_level
+  Files   : visionlog/visionlog.py:90
+  Detail  : The structlog processor chain includes structlog.processors.add_log_level
+            (which adds "level") and add_common_fields (which adds "log_level").
+            Both carry the same information. Log consumers (Elasticsearch,
+            Datadog, Splunk) that key on "level" may ignore the custom
+            "log_level" field.
+  Action  : Remove the "log_level" injection from add_common_fields. The
+            built-in "level" field from structlog.processors.add_log_level is
+            the standard field and is sufficient.
+
+[MINOR]   OBS-003 — No hostname or environment field injected by default
+  Files   : visionlog/visionlog.py:86-91
+  Detail  : Production log systems benefit from hostname and environment
+            (prod/staging/dev) fields in every log record. These are typically
+            cheap to populate at startup (os.uname, os.environ) and are
+            critical for triage in multi-host deployments.
+  Action  : Add optional hostname: bool = False and environment:
+            Optional[str] = None parameters to get_logger (or to the enricher
+            pipeline). Hostname can be populated via socket.gethostname().
+
+[MINOR]   OBS-004 — log_id uses UUID4 with no way to supply a custom ID
+            generator
+  Files   : visionlog/visionlog.py:88
+  Detail  : The log_id field is always generated via str(uuid.uuid4()). Some
+            applications use ULID, KSUID, or their own monotonic ID schemes.
+            There is no way to override the generator without forking the library.
+  Action  : Accept an optional id_generator: Callable[[], str] parameter in
+            add_common_fields or in the configuration, defaulting to
+            lambda: str(uuid.uuid4()).
+
+## CATEGORY 6 — ERROR HANDLING STRATEGY
+-----------------------------------------
+
+[MEDIUM]  ERR-001 — warnings.warn is used for enrichment failures but is
+            often silenced in production environments
+  Files   : visionlog/visionlog.py:31-32, 54-55
+  Detail  : Failed calls to get_public_ip and get_geo_info emit warnings.warn,
+            which is filtered by default in many production configurations
+            (PYTHONWARNINGS=ignore, or applications that consume warnings via
+            logging.captureWarnings). A logging library that silently degrades
+            is unacceptable when operators need to know enrichment is failing.
+  Action  : Replace warnings.warn with a structlog internal logger (or Python
+            stdlib logging.getLogger("visionlog").warning) so that enrichment
+            failures appear in the application's log stream alongside normal
+            log output. This makes degraded enrichment visible without crashing
+            the application.
+
+[MEDIUM]  ERR-002 — DeviceDetector constructor and .parse() call are not
+            wrapped in error handling
+  Files   : visionlog/visionlog.py:73
+  Detail  : `DeviceDetector(user_agent).parse()` is called without any
+            exception handling. Malformed user-agent strings, corrupt database
+            files, or library bugs will raise unhandled exceptions and crash
+            the logger-creation path. For a library that is called during
+            application startup, this is a high-severity failure mode.
+  Action  : Wrap the DeviceDetector call in a try/except block and fall back
+            to the platform-based defaults on any exception, emitting a
+            warning (see ERR-001 for the preferred warning mechanism).
+
+[MINOR]   ERR-003 — serialize_json does not handle non-serialisable objects
+  Files   : visionlog/visionlog.py:16-18
+  Detail  : orjson.dumps will raise orjson.JSONEncodeError (a subclass of
+            TypeError) if the log record contains a non-serialisable value
+            (e.g., a datetime without a registered handler, a custom object).
+            This will crash the structlog processor chain silently (structlog
+            may suppress the error depending on configuration).
+  Action  : Add a try/except orjson.JSONEncodeError block that falls back to
+            a safe representation (e.g., str(record)) and emits a warning.
+            Alternatively, use orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_UUID
+            to handle common edge cases automatically.
+
+## CATEGORY 7 — PERFORMANCE CONSIDERATIONS
+--------------------------------------------
+
+[HIGH]    PERF-001 — loguru.logger.remove() + loguru.logger.add() runs on
+            every get_logger() call
+  Files   : visionlog/visionlog.py:175-176
+  Detail  : Every invocation of get_logger() re-removes all loguru sinks and
+            adds a new one. In a web application handling 1000 req/s where each
+            request creates a logger, this means 1000 loguru reconfigurations
+            per second. loguru's remove() and add() operations acquire an
+            internal lock, making this a latency and contention issue.
+  Action  : Guard loguru configuration with a module-level flag (same pattern
+            as the structlog fix for ARCH-001) so it runs at most once per
+            process lifetime. If loguru is removed entirely (ARCH-002), this
+            issue disappears.
+
+[MEDIUM]  PERF-002 — Public IP is fetched on every get_logger() call with no
+            caching
+  Files   : visionlog/visionlog.py:191
+  Detail  : When ip_address=True and privacy_mode=False, get_public_ip() makes
+            a live HTTP request to api64.ipify.org on every call to get_logger.
+            In applications that create a logger per request (common in async
+            web frameworks), this produces one external HTTP call per request,
+            adding latency and creating a dependency on an external service at
+            every log initialisation.
+  Action  : Cache the resolved public IP at the module level with an optional
+            TTL (e.g., cache_ip_for: int = 300 seconds). A simple
+            functools.lru_cache with maxsize=1 on get_public_ip is the
+            minimal fix, though a time-based TTL is more correct in
+            long-running processes where the IP can change.
+
+[MINOR]   PERF-003 — structlog.configure() called with cache_logger_on_first_use=True
+            but loguru re-init on every call undermines this
+  Files   : visionlog/visionlog.py:120, 175-176
+  Detail  : cache_logger_on_first_use=True is a structlog optimisation that
+            freezes the processor chain after the first log call. However,
+            the loguru reconfiguration on every get_logger call resets the
+            underlying sink, potentially causing the cached structlog state to
+            reference a stale loguru handler. The interaction is subtle but
+            can lead to dropped log entries in threaded applications.
+  Action  : Resolving PERF-001 (guarding loguru init) and ARCH-002 (clarifying
+            loguru's role) will resolve this interaction.
+
+## CATEGORY 8 — DEPENDENCY DESIGN
+------------------------------------
+
+[HIGH]    DEP-001 — loguru's role relative to structlog is undefined and the
+            two frameworks overlap completely
+  Files   : pyproject.toml:24, visionlog/visionlog.py:4, 175-176
+  Detail  : Both loguru and structlog are required dependencies. structlog
+            provides the processor pipeline, JSON rendering, and the public
+            BoundLogger API. loguru is used only to add a stdout sink with
+            format="{message}". structlog's own LoggerFactory and PrintLoggerFactory
+            already provide stdout output. Having both frameworks makes the
+            dependency graph unnecessarily heavy, creates confusing dual-output
+            behaviour, and presents a maintenance burden when either library
+            releases breaking changes.
+  Action  : Determine the intended output path and commit to one framework.
+            If structlog is the primary framework (as the public API suggests),
+            remove loguru as a dependency. If loguru is preferred for its
+            structured output features, use it as the sole framework. Document
+            the rationale in ARCHITECTURE.md or CONTRIBUTING.md.
+
+[MEDIUM]  DEP-002 — httpx is a required dependency but is only needed for
+            optional PII enrichment features
+  Files   : pyproject.toml:31, visionlog/visionlog.py:7
+  Detail  : httpx is unconditionally installed as a required dependency, but
+            it is only used when privacy_mode=False and ip_address=True or
+            geo_info=True. The majority of users who never enable PII
+            enrichment still pay the httpx install cost (~1.5 MB wheel).
+  Action  : Move httpx to an optional extras group:
+              [tool.poetry.extras]
+              network = ["httpx"]
+            Guard get_public_ip and get_geo_info with an ImportError check
+            like the existing DeviceDetector guard. This follows the same
+            pattern already used for device-detector and is consistent with
+            the library's stated optional-enrichment philosophy.
+
+[MINOR]   DEP-003 — No abstraction layer around httpx in network enrichment
+            functions
+  Files   : visionlog/visionlog.py:30, 46
+  Detail  : httpx.get is called directly without an adapter or client
+            abstraction. Tests must patch visionlog.visionlog.httpx.get,
+            tying tests to the specific HTTP library. If httpx is ever
+            swapped for aiohttp or the stdlib urllib, every test that
+            patches httpx must be updated.
+  Action  : Extract a _fetch_json(url: str, timeout: float) -> dict helper
+            that wraps httpx.get. Tests patch _fetch_json rather than httpx.get
+            directly. This also makes it easier to add retry logic, custom
+            headers, or proxy support in one place.
+
+## CATEGORY 9 — CLI DESIGN
+----------------------------
+
+[HIGH]    CLI-001 — CLI exposes only --message and provides no access to any
+            get_logger options
+  Files   : visionlog/cli.py
+  Detail  : The CLI is a thin wrapper that calls get_logger() with all defaults
+            and logs a single message. It does not expose --service-name,
+            --log-level, --user-id, --session-id, or any of the library's
+            enrichment options. This makes the CLI unsuitable for:
+              - Quickly testing enrichment behaviour from the command line
+              - Scripted log injection in shell pipelines
+              - Smoke-testing the library in CI without writing Python code
+  Action  : Expand the CLI with options mirroring the core get_logger API:
+              --service-name TEXT       Service name for the log record
+              --level [debug|info|warning|error|critical]  Log level
+              --user-id TEXT            User identity field
+              --session-id TEXT         Session identity field
+              --no-privacy              Disable privacy mode (enable PII)
+              --ip / --no-ip            Auto-fetch public IP (requires --no-privacy)
+              --geo / --no-geo          Fetch geo info (requires --no-privacy)
+            Use click.option defaults that mirror get_logger defaults so the
+            CLI and library stay in sync.
+
+[MEDIUM]  CLI-002 — CLI command is named "log" which conflicts with Python's
+            stdlib logging module in shell tab-completion and import namespace
+  Files   : visionlog/cli.py:6
+  Detail  : The click command is named "log". While click commands are not
+            Python symbols, the name creates cognitive dissonance for developers
+            who associate "log" with Python's built-in logging. The entry point
+            is correctly named "visionlog-cli" but the subcommand is "log",
+            so invocation is `visionlog-cli log` — the repetition is awkward
+            when only one subcommand exists.
+  Action  : Either rename the command to "emit" or "send" for clarity, or
+            restructure the CLI as a single command (no subcommand) where
+            `visionlog-cli --message "..."` works directly. The latter matches
+            the current single-purpose design.
+
+[MINOR]   CLI-003 — CLI produces no output on success and no error on failure
+  Files   : visionlog/cli.py:6-8
+  Detail  : The CLI function has no return value handling. If get_logger raises
+            (e.g., ImportError from device-detector), the exception propagates
+            unhandled through click and produces a stack trace rather than a
+            user-friendly error message.
+  Action  : Wrap the CLI body in a try/except block and use click.echo(...,
+            err=True) + sys.exit(1) for clean error reporting.
+
+## CATEGORY 10 — FUTURE EXTENSIBILITY
+---------------------------------------
+
+[HIGH]    EXT-001 — Adding new enrichment fields requires modifying the
+            get_logger signature, breaking the open/closed principle
+  Files   : visionlog/visionlog.py:123-205
+  Detail  : See PAT-001. This finding specifically notes that any third-party
+            library that integrates with visionlog (e.g., a Django plugin, a
+            FastAPI middleware) cannot add enrichment fields without either:
+              (a) Forking the library
+              (b) Calling logger.bind() manually after construction, which
+                  bypasses any validation, documentation, or observability in
+                  the enrichment pipeline
+  Action  : Implement the Enricher protocol described in PAT-001. Additionally,
+            provide an entry-points hook (importlib.metadata) so installed
+            packages can register enrichers that are automatically picked up
+            by get_logger, following the pattern used by pytest plugins,
+            Flask extensions, etc.
+
+[MEDIUM]  EXT-002 — Output format cannot be changed without modifying
+            module-level global state
+  Files   : visionlog/visionlog.py:110-121
+  Detail  : See CFG-001. Because structlog.configure() runs at import time,
+            even if a user calls structlog.configure() themselves afterward,
+            they must know to do so after importing visionlog. Any library that
+            imports visionlog as a transitive dependency will silently hijack
+            the host application's structlog configuration.
+  Action  : Resolve ARCH-001 first. Then expose a configure_visionlog(
+            renderer="json", extra_processors=None) function that can be called
+            explicitly, making visionlog a well-behaved guest in applications
+            that also use structlog.
+
+[MINOR]   EXT-003 — No versioned public API or stability guarantees
+  Files   : visionlog/__init__.py, pyproject.toml
+  Detail  : The library is at version 0.1.1 with no documented API stability
+            promise. Users who build on visionlog cannot determine whether any
+            symbol is considered stable or internal. Python convention is to
+            use an underscore prefix for internal symbols, but visionlog
+            currently exposes all module-level functions without distinction.
+  Action  : Document the public API contract in README.md and in __init__.py's
+            __all__. Prefix internal helpers (e.g., _fetch_json, _configure_once)
+            with underscore. Commit to semantic versioning and document the
+            stability policy (e.g., "public API is stable from 1.0.0 onward").
+
+--------------------------------------------------------------------------------
+FINDINGS SUMMARY
+--------------------------------------------------------------------------------
+
+  Severity   Count   Finding IDs
+  ---------  ------  -----------------------------------------------------------
+  HIGH       9       API-001, API-002, ARCH-001, ARCH-002, PAT-001, CFG-001,
+                     OBS-001, PERF-001, DEP-001, CLI-001, EXT-001
+  MEDIUM     12      API-003, API-004, ARCH-003, ARCH-004, PAT-002, CFG-002,
+                     OBS-002, ERR-001, ERR-002, PERF-002, DEP-002, CLI-002,
+                     EXT-002
+  MINOR      10      API-005, PAT-003, CFG-003, OBS-003, OBS-004, ERR-003,
+                     PERF-003, DEP-003, CLI-003, EXT-003
+
+  TOTAL      31
+
+  Note: Findings with no prior-audit equivalent are net-new architectural
+  observations. No findings from audit-20260331T180454.log are repeated here
+  as those are assumed to have been resolved.
+
+--------------------------------------------------------------------------------
+PRIORITIZED IMPROVEMENT ROADMAP
+--------------------------------------------------------------------------------
+
+Phase 1 — Structural Foundations (address before adding new features)
+  1. [ARCH-001]  Move structlog.configure() out of module scope; use a
+                 configure_visionlog() function or a first-use guard flag.
+  2. [ARCH-002]  Clarify loguru's role. If redundant, remove it.
+  3. [PERF-001]  Guard loguru initialisation with a run-once flag.
+  4. [API-002]   Fix app_name hardcoding in add_common_fields; use service_name.
+  5. [OBS-001]   Remove redundant app_name field or rename to service.
+  6. [OBS-002]   Remove duplicate log_level field; rely on structlog's "level".
+
+Phase 2 — Architecture & Extensibility (before 0.2.0)
+  7. [ARCH-003]  Split visionlog.py into enrichers/, processors.py, logger.py.
+  8. [PAT-001 / EXT-001]  Introduce Enricher protocol; make enrichment pluggable.
+  9. [CFG-001]   Accept renderer parameter in configure_visionlog().
+ 10. [DEP-001]   Decide on loguru vs structlog; document in ARCHITECTURE.md.
+ 11. [DEP-002]   Move httpx to optional extras (network = ["httpx"]).
+ 12. [CLI-001]   Expand CLI to expose core get_logger parameters.
+ 13. [API-001]   Introduce LoggerConfig dataclass for grouped configuration.
+
+Phase 3 — API Polish & Long-Term Health (before 1.0.0)
+ 14. [API-003]   Fix serialize_json signature; remove unused *args/**kwargs.
+ 15. [API-004]   Add DeprecationWarning for enable_tracing with removal target.
+ 16. [API-005]   Expand __all__ to cover all intentionally public symbols.
+ 17. [PAT-002]   Make structlog singleton pattern explicit (_CONFIGURED flag).
+ 18. [CFG-002]   Expose extra_processors hook in configure_visionlog().
+ 19. [CFG-003]   Make HTTP timeout configurable.
+ 20. [ERR-001]   Replace warnings.warn with stdlib logging.getLogger("visionlog").
+ 21. [ERR-002]   Wrap DeviceDetector.parse() in try/except.
+ 22. [ERR-003]   Add JSON serialisation error fallback in serialize_json.
+ 23. [PERF-002]  Cache public IP lookup with TTL.
+ 24. [DEP-003]   Extract _fetch_json() helper to decouple tests from httpx.
+ 25. [CLI-002]   Rename/restructure CLI command.
+ 26. [CLI-003]   Add error handling and clean exit in CLI.
+ 27. [OBS-003]   Add optional hostname/environment fields.
+ 28. [OBS-004]   Accept custom id_generator in add_common_fields.
+ 29. [EXT-002]   Ensure configure_visionlog() is idempotent and opt-in.
+ 30. [EXT-003]   Document public API stability; underscore internal helpers.
+ 31. [ARCH-004]  Remove __main__ block from visionlog.py.
+
+--------------------------------------------------------------------------------
+ARCHITECTURE QUALITY ASSESSMENT
+--------------------------------------------------------------------------------
+
+Dimension                         Status    Notes
+--------------------------------  --------  ------------------------------------
+API surface clarity               POOR      10-arg function; app_name mismatch
+Module separation of concerns     POOR      All logic in one 223-line file
+Processor pipeline design         PARTIAL   Fixed chain; no extension hooks
+Configuration model               POOR      Module-level side effect at import
+Enricher extensibility            POOR      Hard-coded; requires signature change
+Dependency hygiene                PARTIAL   httpx/loguru should be optional/removed
+Error propagation strategy        PARTIAL   warnings.warn not visible in prod
+CLI completeness                  POOR      Exposes < 10% of library options
+Test isolation                    PARTIAL   Global structlog state leaks between tests
+Performance at scale              POOR      Loguru reconfigured per logger creation
+
+OVERALL ARCHITECTURE SCORE: 4 / 10
+
+The library's concept is sound and the public API is clean at its core.
+The most impactful single change is moving structlog.configure() out of module
+scope (ARCH-001) — this unblocks multi-configuration support, proper test
+isolation, and makes visionlog a well-behaved guest in any Python application
+that also uses structlog. The second most impactful is clarifying and likely
+removing loguru (ARCH-002 / DEP-001), which would eliminate an entire class of
+performance and correctness issues.
+
+================================================================================
+END OF AUDIT
+================================================================================
