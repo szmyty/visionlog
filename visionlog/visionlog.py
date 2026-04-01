@@ -6,18 +6,18 @@ import orjson
 import uuid
 import httpx
 import platform
-from typing import Optional, Union
+from typing import Any, Dict, Optional, Union
 
 try:
     from device_detector import DeviceDetector
 except ImportError:
     DeviceDetector = None
 
-def serialize_json(record, *args, **kwargs):
+def serialize_json(record, *args, **kwargs) -> str:
     """Serialize logs using orjson for high-performance JSON output."""
     return orjson.dumps(record, option=orjson.OPT_APPEND_NEWLINE).decode()
 
-def get_public_ip():
+def get_public_ip() -> Optional[str]:
     """Fetches the user's public IP address."""
     try:
         return httpx.get("https://api64.ipify.org?format=json", timeout=5.0).json()["ip"]
@@ -25,7 +25,7 @@ def get_public_ip():
         warnings.warn(f"Failed to fetch public IP: {error}")
         return None
 
-def get_geo_info(ip: str):
+def get_geo_info(ip: str) -> Dict[str, str]:
     """Fetches geo-location & ISP info for a given IP address."""
     try:
         response = httpx.get(f"https://ipinfo.io/{ip}/json", timeout=5.0).json()
@@ -40,7 +40,7 @@ def get_geo_info(ip: str):
         warnings.warn(f"Failed to fetch geo info for IP {ip}: {error}")
         return {}
 
-def get_device_info(user_agent: Optional[str] = None):
+def get_device_info(user_agent: Optional[str] = None) -> Dict[str, str]:
     """Extracts detailed device details from user-agent string."""
     if user_agent is not None and DeviceDetector is None:
         raise ImportError(
@@ -60,7 +60,7 @@ def get_device_info(user_agent: Optional[str] = None):
         "browser_version": device.client_version() if device else "",
     }
 
-def add_common_fields(logger, method_name, event_dict):
+def add_common_fields(logger, method_name, event_dict) -> Dict[str, Any]:
     """Injects common metadata fields into every log."""
     event_dict.setdefault("log_id", str(uuid.uuid4()))
     event_dict.setdefault("app_name", "visionlog")
@@ -93,7 +93,7 @@ def get_logger(
     user_agent: Optional[str] = None,
     geo_info: bool = False,
     enable_tracing: bool = False,
-):
+) -> structlog.stdlib.BoundLogger:
     """
     Creates a structured logger with optional default fields.
 
