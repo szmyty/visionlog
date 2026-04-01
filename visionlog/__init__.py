@@ -1,2 +1,4 @@
-from .visionlog import get_logger as get_logger, add_otel_context as add_otel_context
+from .visionlog import get_logger
+
+__all__ = ["get_logger"]
 
