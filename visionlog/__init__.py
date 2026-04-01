@@ -1,4 +1,4 @@
-from .visionlog import get_logger, configure_visionlog
+from .visionlog import get_logger, configure_visionlog, Enricher
 
-__all__ = ["get_logger", "configure_visionlog"]
+__all__ = ["get_logger", "configure_visionlog", "Enricher"]
 

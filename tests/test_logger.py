@@ -5,6 +5,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 import httpx
+import structlog
 
 from visionlog.visionlog import (
     serialize_json,
@@ -14,6 +15,7 @@ from visionlog.visionlog import (
     get_public_ip,
     get_logger,
     configure_visionlog,
+    Enricher,
 )
 import visionlog.visionlog as vl_module
 
@@ -378,3 +380,72 @@ def test_no_structlog_configure_at_import_time():
                 del sys.modules[mod_name]
         sys.modules.update(saved_modules)
 
+
+
+# ---------------------------------------------------------------------------
+# Enricher protocol tests
+# ---------------------------------------------------------------------------
+
+class _ConstantEnricher:
+    """Test enricher that binds a fixed field."""
+
+    def enrich(
+        self, logger: structlog.stdlib.BoundLogger
+    ) -> structlog.stdlib.BoundLogger:
+        return logger.bind(enriched_by="constant")
+
+
+class _ChainEnricher:
+    """Test enricher that appends a step marker."""
+
+    def __init__(self, step: int) -> None:
+        self.step = step
+
+    def enrich(
+        self, logger: structlog.stdlib.BoundLogger
+    ) -> structlog.stdlib.BoundLogger:
+        return logger.bind(**{f"step_{self.step}": True})
+
+
+def test_enricher_protocol_is_recognized():
+    """Verifies that a class with enrich() satisfies the Enricher protocol."""
+    assert isinstance(_ConstantEnricher(), Enricher)
+
+
+def test_get_logger_no_enrichers_is_unchanged():
+    """Verifies backward compatibility: omitting enrichers has no effect."""
+    logger_plain = get_logger(user_id="u1")
+    logger_none = get_logger(user_id="u1", enrichers=None)
+    assert logger_plain._context == logger_none._context
+
+
+def test_get_logger_single_enricher():
+    """Verifies that a single enricher binds its fields to the logger."""
+    logger = get_logger(enrichers=[_ConstantEnricher()])
+    assert logger._context.get("enriched_by") == "constant"
+
+
+def test_get_logger_multiple_enrichers_applied_in_order():
+    """Verifies that multiple enrichers are applied in the order they are listed."""
+    logger = get_logger(enrichers=[_ChainEnricher(1), _ChainEnricher(2)])
+    assert logger._context.get("step_1") is True
+    assert logger._context.get("step_2") is True
+
+
+def test_get_logger_enrichers_combined_with_built_in_fields():
+    """Verifies that enricher fields coexist with built-in bound fields."""
+    logger = get_logger(user_id="u42", enrichers=[_ConstantEnricher()])
+    assert logger._context.get("user_id") == "u42"
+    assert logger._context.get("enriched_by") == "constant"
+
+
+def test_get_logger_empty_enrichers_list():
+    """Verifies that an empty enrichers list is treated the same as None."""
+    logger = get_logger(enrichers=[])
+    assert "enriched_by" not in logger._context
+
+
+def test_enricher_exported_from_package():
+    """Verifies that Enricher is accessible from the top-level visionlog package."""
+    from visionlog import Enricher as TopLevelEnricher
+    assert TopLevelEnricher is Enricher
