@@ -5,7 +5,37 @@ import orjson
 import uuid
 import httpx
 import platform
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
+
+
+@runtime_checkable
+class Enricher(Protocol):
+    """Protocol for pluggable log enrichers.
+
+    Implement this protocol to create a custom enricher that can be passed to
+    :func:`get_logger` via the ``enrichers`` parameter.  Each enricher receives
+    the current :class:`structlog.stdlib.BoundLogger`, may bind additional
+    fields to it, and must return the (possibly modified) logger.
+
+    Example::
+
+        import structlog
+
+        class RequestIDEnricher:
+            def __init__(self, request_id: str) -> None:
+                self.request_id = request_id
+
+            def enrich(
+                self, logger: structlog.stdlib.BoundLogger
+            ) -> structlog.stdlib.BoundLogger:
+                return logger.bind(request_id=self.request_id)
+    """
+
+    def enrich(
+        self, logger: structlog.stdlib.BoundLogger
+    ) -> structlog.stdlib.BoundLogger:
+        """Enrich *logger* with additional context and return it."""
+        ...
 
 try:
     from device_detector import DeviceDetector
@@ -158,6 +188,7 @@ def get_logger(
     enable_tracing: bool = False,
     privacy_mode: bool = True,
     disable_network: bool = False,
+    enrichers: Optional[List[Enricher]] = None,
 ) -> structlog.stdlib.BoundLogger:
     """
     Creates a structured logger with optional default fields.
@@ -197,6 +228,10 @@ def get_logger(
     - `enable_tracing`: Deprecated since version 0.2.0. OpenTelemetry context is
       now always injected automatically when a span is active; this parameter has
       no effect and will be removed in a future release.
+    - `enrichers`: Optional list of :class:`Enricher` instances applied after
+      all built-in enrichment.  Each enricher's :meth:`~Enricher.enrich` method
+      is called in order, receiving and returning the
+      :class:`structlog.stdlib.BoundLogger`.
     """
 
     configure_visionlog()
@@ -227,6 +262,11 @@ def get_logger(
         # Handle device info
         if device_info:
             logger = logger.bind(**get_device_info(user_agent))
+
+    # Apply pluggable enrichers
+    if enrichers:
+        for enricher in enrichers:
+            logger = enricher.enrich(logger)
 
     return logger
 
