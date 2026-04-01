@@ -61,19 +61,22 @@ def test_add_otel_context_import_error(monkeypatch):
     assert "span_id" not in result
 
 
-def test_get_logger_enable_tracing_includes_processor():
-    """When enable_tracing=True, add_otel_context is part of the processor chain."""
+def test_get_logger_otel_context_always_in_processor_chain():
+    """add_otel_context is always part of the processor chain at module load time."""
     import structlog as _structlog
 
-    get_logger(enable_tracing=True)
     processors = _structlog.get_config()["processors"]
     assert add_otel_context in processors
 
 
-def test_get_logger_tracing_disabled_by_default():
-    """When enable_tracing is False (the default), add_otel_context is not in the chain."""
+def test_get_logger_enable_tracing_param_accepted():
+    """enable_tracing parameter is accepted for backward compatibility and has no effect on the processor chain."""
     import structlog as _structlog
 
-    get_logger()
-    processors = _structlog.get_config()["processors"]
-    assert add_otel_context not in processors
+    processors_before = _structlog.get_config()["processors"]
+
+    get_logger(enable_tracing=True)
+    assert _structlog.get_config()["processors"] is processors_before
+
+    get_logger(enable_tracing=False)
+    assert _structlog.get_config()["processors"] is processors_before

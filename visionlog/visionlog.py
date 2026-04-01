@@ -107,6 +107,19 @@ def add_otel_context(logger, method_name, event_dict):
         pass
     return event_dict
 
+structlog.configure(
+    processors=[
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.add_log_level,
+        add_common_fields,
+        add_otel_context,
+        structlog.processors.JSONRenderer(serializer=serialize_json),
+    ],
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
 def get_logger(
     service_name="visionlog",
     user_id: Optional[str] = None,
@@ -147,28 +160,13 @@ def get_logger(
     - `device_info`: If True, extracts detailed device data
     - `user_agent`: Custom user-agent string for parsing device details
     - `geo_info`: If True, fetches IP geo-location (city, country, ISP, timezone)
-    - `enable_tracing`: If True, injects OpenTelemetry trace/span IDs into every log
-      record when a span is active. Requires ``visionlog[tracing]`` to be installed.
+    - `enable_tracing`: Deprecated since version 0.2.0. OpenTelemetry context is
+      now always injected automatically when a span is active; this parameter has
+      no effect and will be removed in a future release.
     """
 
     loguru.logger.remove()
     loguru.logger.add(sys.stdout, format="{message}", serialize=False)
-
-    processors = [
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.add_log_level,
-        add_common_fields,
-    ]
-    if enable_tracing:
-        processors.append(add_otel_context)
-    processors.append(structlog.processors.JSONRenderer(serializer=serialize_json))
-
-    structlog.configure(
-        processors=processors,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
 
     logger = structlog.get_logger(service=service_name)
 
