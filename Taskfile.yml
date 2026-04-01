@@ -1,0 +1,47 @@
+version: "3"
+
+tasks:
+  default:
+    desc: "Show available tasks"
+    cmds:
+      - task --list
+
+  install:
+    desc: "Install dependencies using Poetry"
+    cmds:
+      - poetry install
+
+  lint:
+    desc: "Run linting with Ruff"
+    cmds:
+      - poetry run ruff check .
+
+  format:
+    desc: "Format code with Black"
+    cmds:
+      - poetry run black .
+
+  test:
+    desc: "Run test suite"
+    cmds:
+      - poetry run pytest
+
+  coverage:
+    desc: "Run tests with coverage"
+    cmds:
+      - poetry run pytest --cov=visionlog --cov-report=term-missing
+
+  build:
+    desc: "Build distribution packages"
+    cmds:
+      - poetry build
+
+  clean:
+    desc: "Clean build artifacts"
+    cmds:
+      - rm -rf dist build *.egg-info
+
+  typecheck:
+    desc: "Run type checking (mypy)"
+    cmds:
+      - poetry run mypy visionlog || true

@@ -167,6 +167,24 @@ useful when `privacy_mode=False` but you still need to suppress network activity
 
 ---
 
+## 🧰 Development Tasks
+
+This project uses [Taskfile](https://taskfile.dev) for development workflows.
+
+Install Task:
+
+```bash
+brew install go-task/tap/go-task
+```
+
+List available tasks:
+
+```bash
+task --list
+```
+
+---
+
 ## 🛠 **Development & Contribution**
 
 1. Clone the repository:
