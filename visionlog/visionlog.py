@@ -1,4 +1,5 @@
 import sys
+import threading
 import warnings
 import structlog
 import loguru
@@ -107,18 +108,47 @@ def add_otel_context(logger, method_name, event_dict):
         pass
     return event_dict
 
-structlog.configure(
-    processors=[
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.add_log_level,
-        add_common_fields,
-        add_otel_context,
-        structlog.processors.JSONRenderer(serializer=serialize_json),
-    ],
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    wrapper_class=structlog.stdlib.BoundLogger,
-    cache_logger_on_first_use=True,
-)
+_CONFIGURED = False
+_CONFIGURE_LOCK = threading.Lock()
+
+
+def configure_visionlog(renderer=None, extra_processors=None) -> None:
+    """Configure structlog for visionlog.
+
+    This function is idempotent: it only configures structlog once per process.
+    Calling it multiple times has no effect after the first successful call.
+    Thread-safe: concurrent callers are serialised via an internal lock.
+
+    Args:
+        renderer: Optional structlog processor to use as the final renderer.
+            Defaults to :class:`structlog.processors.JSONRenderer` with the
+            :func:`serialize_json` serializer.
+        extra_processors: Optional list of additional structlog processors to
+            insert before the renderer.
+    """
+    global _CONFIGURED
+    if not _CONFIGURED:
+        with _CONFIGURE_LOCK:
+            if not _CONFIGURED:
+                if renderer is None:
+                    renderer = structlog.processors.JSONRenderer(serializer=serialize_json)
+                processors = [
+                    structlog.processors.TimeStamper(fmt="iso"),
+                    structlog.processors.add_log_level,
+                    add_common_fields,
+                    add_otel_context,
+                ]
+                if extra_processors:
+                    processors.extend(extra_processors)
+                processors.append(renderer)
+                structlog.configure(
+                    processors=processors,
+                    logger_factory=structlog.stdlib.LoggerFactory(),
+                    wrapper_class=structlog.stdlib.BoundLogger,
+                    cache_logger_on_first_use=True,
+                )
+                _CONFIGURED = True
+
 
 def get_logger(
     service_name="visionlog",
@@ -171,6 +201,8 @@ def get_logger(
       now always injected automatically when a span is active; this parameter has
       no effect and will be removed in a future release.
     """
+
+    configure_visionlog()
 
     loguru.logger.remove()
     loguru.logger.add(sys.stdout, format="{message}", serialize=False)
