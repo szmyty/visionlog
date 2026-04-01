@@ -130,6 +130,7 @@ def get_logger(
     geo_info: bool = False,
     enable_tracing: bool = False,
     privacy_mode: bool = True,
+    disable_network: bool = False,
 ) -> structlog.stdlib.BoundLogger:
     """
     Creates a structured logger with optional default fields.
@@ -151,6 +152,12 @@ def get_logger(
       IP lookup, geo-location lookup, and device detection are silently skipped
       regardless of ``ip_address``, ``geo_info``, and ``device_info``.
       Set to ``False`` to enable those features.
+    - `disable_network`: When ``True``, all external HTTP calls (IP lookup and
+      geo-location lookup) are skipped and fallback values are returned (``None``
+      for IP, ``{}`` for geo info).  Useful in CI environments, air-gapped
+      systems, or any restricted-network context.  Compatible with
+      ``privacy_mode``; when both are ``True`` network calls are already
+      prevented by ``privacy_mode``.
     - `user_id`: Tracks the user identity
     - `session_id`: Tracks user session
     - `ip_address`: Controls IP address logging:
@@ -181,14 +188,14 @@ def get_logger(
         # Handle IP address logging
         ip = None
         if ip_address is True:
-            ip = get_public_ip()
+            ip = None if disable_network else get_public_ip()
         elif isinstance(ip_address, str):
             ip = ip_address
 
         if ip:
             logger = logger.bind(ip_address=ip)
 
-            if geo_info:
+            if geo_info and not disable_network:
                 logger = logger.bind(**get_geo_info(ip))
 
         # Handle device info
