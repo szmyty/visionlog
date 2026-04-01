@@ -16,6 +16,7 @@ classifiers = [
   "License :: OSI Approved :: MIT License"
 ]
 keywords = ["logging", "structured", "analytics", "json", "observability"]
+packages = [{ include = "visionlog" }]
 
 [tool.poetry.dependencies]
 python = "^3.8"
