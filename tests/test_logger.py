@@ -13,7 +13,9 @@ from visionlog.visionlog import (
     get_geo_info,
     get_public_ip,
     get_logger,
+    configure_visionlog,
 )
+import visionlog.visionlog as vl_module
 
 
 def test_serialize_json():
@@ -259,3 +261,120 @@ def test_disable_network_str_ip_still_bound():
     """Verifies that a string IP address is still bound even when disable_network=True (no HTTP needed)."""
     logger = get_logger(ip_address="1.2.3.4", privacy_mode=False, disable_network=True)
     assert logger._context.get("ip_address") == "1.2.3.4"
+
+
+# ---------------------------------------------------------------------------
+# configure_visionlog() tests
+# ---------------------------------------------------------------------------
+
+def test_configure_visionlog_is_idempotent():
+    """Verifies that configure_visionlog() only calls structlog.configure() once."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        with patch("structlog.configure") as mock_configure:
+            configure_visionlog()
+            configure_visionlog()
+            configure_visionlog()
+        mock_configure.assert_called_once()
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_configure_visionlog_sets_flag():
+    """Verifies that _CONFIGURED is set to True after configure_visionlog() runs."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        configure_visionlog()
+        assert vl_module._CONFIGURED is True
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_configure_visionlog_skips_when_already_configured():
+    """Verifies that configure_visionlog() skips structlog.configure() when _CONFIGURED is True."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = True
+        with patch("structlog.configure") as mock_configure:
+            configure_visionlog()
+        mock_configure.assert_not_called()
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_configure_visionlog_custom_renderer():
+    """Verifies that configure_visionlog() uses the provided renderer."""
+    import structlog as _structlog
+
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        custom_renderer = _structlog.dev.ConsoleRenderer()
+        with patch("structlog.configure") as mock_configure:
+            configure_visionlog(renderer=custom_renderer)
+        mock_configure.assert_called_once()
+        call_processors = mock_configure.call_args[1]["processors"]
+        assert call_processors[-1] is custom_renderer
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_configure_visionlog_extra_processors():
+    """Verifies that extra_processors are inserted before the renderer."""
+    import structlog as _structlog
+
+    def my_processor(logger, method_name, event_dict):
+        return event_dict
+
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        with patch("structlog.configure") as mock_configure:
+            configure_visionlog(extra_processors=[my_processor])
+        call_processors = mock_configure.call_args[1]["processors"]
+        renderer = call_processors[-1]
+        assert isinstance(renderer, _structlog.processors.JSONRenderer)
+        assert my_processor in call_processors
+        assert call_processors.index(my_processor) < call_processors.index(renderer)
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_get_logger_calls_configure_visionlog():
+    """Verifies that get_logger() triggers configure_visionlog() when not yet configured."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        with patch("visionlog.visionlog.configure_visionlog", wraps=configure_visionlog) as mock_cfg:
+            get_logger()
+        mock_cfg.assert_called_once()
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_no_structlog_configure_at_import_time():
+    """Verifies that importing visionlog does not call structlog.configure() at module level."""
+    import importlib
+    import sys
+
+    # Snapshot the current module state so we can restore it after the test
+    saved_modules = {k: v for k, v in sys.modules.items() if "visionlog" in k}
+    try:
+        # Remove cached modules so we can re-import cleanly
+        for mod_name in list(sys.modules.keys()):
+            if "visionlog" in mod_name:
+                del sys.modules[mod_name]
+
+        with patch("structlog.configure") as mock_configure:
+            importlib.import_module("visionlog")
+
+        mock_configure.assert_not_called()
+    finally:
+        # Restore original module state to avoid polluting other tests
+        for mod_name in list(sys.modules.keys()):
+            if "visionlog" in mod_name:
+                del sys.modules[mod_name]
+        sys.modules.update(saved_modules)
+
