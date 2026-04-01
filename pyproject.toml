@@ -17,6 +17,7 @@ classifiers = [
 ]
 keywords = ["logging", "structured", "analytics", "json", "observability"]
 packages = [{ include = "visionlog" }]
+exclude = ["tests/**", "examples/**", "audits/**"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
