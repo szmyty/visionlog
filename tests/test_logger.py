@@ -207,3 +207,55 @@ def test_privacy_mode_false_allows_device_info():
         logger = get_logger(device_info=True, privacy_mode=False)
         mock_device.assert_called_once()
     assert logger._context.get("device_type") == "desktop"
+
+
+def test_disable_network_skips_ip_lookup():
+    """Verifies that disable_network=True prevents get_public_ip from being called."""
+    with patch("visionlog.visionlog.get_public_ip") as mock_ip:
+        logger = get_logger(ip_address=True, privacy_mode=False, disable_network=True)
+        mock_ip.assert_not_called()
+    assert "ip_address" not in logger._context
+
+
+def test_disable_network_skips_geo_lookup():
+    """Verifies that disable_network=True prevents get_geo_info from being called."""
+    with patch("visionlog.visionlog.get_geo_info") as mock_geo:
+        logger = get_logger(ip_address="1.2.3.4", geo_info=True, privacy_mode=False, disable_network=True)
+        mock_geo.assert_not_called()
+    assert "city" not in logger._context
+    assert "country" not in logger._context
+
+
+def test_disable_network_false_allows_ip_lookup():
+    """Verifies that disable_network=False (default) still allows IP lookup."""
+    with patch("visionlog.visionlog.get_public_ip", return_value="9.9.9.9") as mock_ip:
+        logger = get_logger(ip_address=True, privacy_mode=False, disable_network=False)
+        mock_ip.assert_called_once()
+    assert logger._context.get("ip_address") == "9.9.9.9"
+
+
+def test_disable_network_allows_device_info():
+    """Verifies that disable_network=True does not block device_info (no HTTP call)."""
+    device_data = {
+        "device_type": "desktop", "os": "Linux", "os_version": "5.15",
+        "device_brand": "", "device_model": "", "architecture": "64bit",
+        "browser": "", "browser_version": "",
+    }
+    with patch("visionlog.visionlog.get_device_info", return_value=device_data) as mock_device:
+        logger = get_logger(device_info=True, privacy_mode=False, disable_network=True)
+        mock_device.assert_called_once()
+    assert logger._context.get("device_type") == "desktop"
+
+
+def test_disable_network_default_is_false():
+    """Verifies that disable_network defaults to False (does not block network calls)."""
+    with patch("visionlog.visionlog.get_public_ip", return_value="5.5.5.5") as mock_ip:
+        logger = get_logger(ip_address=True, privacy_mode=False)
+        mock_ip.assert_called_once()
+    assert logger._context.get("ip_address") == "5.5.5.5"
+
+
+def test_disable_network_str_ip_still_bound():
+    """Verifies that a string IP address is still bound even when disable_network=True (no HTTP needed)."""
+    logger = get_logger(ip_address="1.2.3.4", privacy_mode=False, disable_network=True)
+    assert logger._context.get("ip_address") == "1.2.3.4"

@@ -132,6 +132,32 @@ logger = get_logger(
 
 ---
 
+## 📡 Network Control
+
+visionlog performs external HTTP calls for IP lookup and geo-location lookup.
+This can cause issues in CI environments, air-gapped systems, or restricted networks.
+
+Use `disable_network=True` to skip all HTTP calls and receive fallback values instead
+(`None` for IP, `{}` for geo info):
+
+```python
+from visionlog import get_logger
+
+logger = get_logger(
+    "my-app",
+    ip_address=True,
+    geo_info=True,
+    privacy_mode=False,
+    disable_network=True,  # no external HTTP calls are made
+)
+```
+
+`disable_network` is compatible with `privacy_mode`.  When `privacy_mode=True`
+(the default) network calls are already prevented, so `disable_network` is most
+useful when `privacy_mode=False` but you still need to suppress network activity.
+
+---
+
 ## ⚡ **Why Use Visionlog?**
 
 ✅ **Super fast JSON serialization** using `orjson`  
