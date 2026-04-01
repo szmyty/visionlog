@@ -3,9 +3,10 @@ import warnings
 import structlog
 import orjson
 import uuid
-import httpx
 import platform
 from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
+
+from visionlog.enrichers.network import get_public_ip, get_geo_info, NetworkEnricher  # noqa: F401
 
 
 @runtime_checkable
@@ -45,44 +46,6 @@ except ImportError:
 def serialize_json(record, *args, **kwargs) -> str:
     """Serialize logs using orjson for high-performance JSON output."""
     return orjson.dumps(record, option=orjson.OPT_APPEND_NEWLINE).decode()
-
-def get_public_ip() -> Optional[str]:
-    """Fetches the user's public IP address.
-
-    .. warning::
-        **PII / Privacy Notice**: The public IP address is Personally Identifiable
-        Information (PII) under regulations such as GDPR and CCPA.  Only call this
-        function when you have a lawful basis for collecting it and the caller has
-        set ``privacy_mode=False`` in :func:`get_logger`.
-    """
-    try:
-        return httpx.get("https://api64.ipify.org?format=json", timeout=5.0).json()["ip"]
-    except (httpx.RequestError, httpx.HTTPStatusError, KeyError, ValueError) as error:
-        warnings.warn(f"Failed to fetch public IP: {error}")
-        return None
-
-def get_geo_info(ip: str) -> Dict[str, str]:
-    """Fetches geo-location & ISP info for a given IP address.
-
-    .. warning::
-        **PII / Privacy Notice**: Geo-location data derived from an IP address
-        (city, region, country, timezone, ISP) may constitute PII under GDPR,
-        CCPA, and similar regulations.  Only call this function when you have a
-        lawful basis for collecting it and the caller has set
-        ``privacy_mode=False`` in :func:`get_logger`.
-    """
-    try:
-        response = httpx.get(f"https://ipinfo.io/{ip}/json", timeout=5.0).json()
-        return {
-            "city": response.get("city", ""),
-            "region": response.get("region", ""),
-            "country": response.get("country", ""),
-            "timezone": response.get("timezone", ""),
-            "org": response.get("org", ""),  # ISP / Organization
-        }
-    except (httpx.RequestError, httpx.HTTPStatusError, KeyError, ValueError) as error:
-        warnings.warn(f"Failed to fetch geo info for IP {ip}: {error}")
-        return {}
 
 def get_device_info(user_agent: Optional[str] = None) -> Dict[str, str]:
     """Extracts detailed device details from user-agent string.
