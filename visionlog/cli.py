@@ -3,7 +3,7 @@ from .visionlog import get_logger
 
 @click.command()
 @click.option("--message", default="Hello, Visionlog!", help="Log message.")
-def log(message):
+def log(message) -> None:
     logger = get_logger()
     logger.info(message)
 
