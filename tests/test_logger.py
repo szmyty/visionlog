@@ -141,3 +141,69 @@ def test_get_geo_info_invalid_json():
     assert result == {}
     assert len(caught) == 1
     assert "Failed to fetch geo info" in str(caught[0].message)
+
+
+def test_privacy_mode_true_skips_ip_lookup():
+    """Verifies that privacy_mode=True (default) prevents IP lookup even when ip_address=True."""
+    with patch("visionlog.visionlog.get_public_ip") as mock_ip:
+        logger = get_logger(ip_address=True, privacy_mode=True)
+        mock_ip.assert_not_called()
+    assert "ip_address" not in logger._context
+
+
+def test_privacy_mode_true_skips_geo_lookup():
+    """Verifies that privacy_mode=True skips geo lookup even when geo_info=True."""
+    with patch("visionlog.visionlog.get_geo_info") as mock_geo:
+        logger = get_logger(ip_address="1.2.3.4", geo_info=True, privacy_mode=True)
+        mock_geo.assert_not_called()
+    assert "city" not in logger._context
+    assert "country" not in logger._context
+
+
+def test_privacy_mode_true_skips_device_info():
+    """Verifies that privacy_mode=True skips device detection even when device_info=True."""
+    with patch("visionlog.visionlog.get_device_info") as mock_device:
+        logger = get_logger(device_info=True, privacy_mode=True)
+        mock_device.assert_not_called()
+    assert "device_type" not in logger._context
+
+
+def test_privacy_mode_default_is_true():
+    """Verifies that privacy_mode defaults to True, preventing PII collection without opt-in."""
+    with patch("visionlog.visionlog.get_public_ip") as mock_ip, \
+         patch("visionlog.visionlog.get_device_info") as mock_device:
+        logger = get_logger(ip_address=True, device_info=True)
+        mock_ip.assert_not_called()
+        mock_device.assert_not_called()
+    assert "ip_address" not in logger._context
+    assert "device_type" not in logger._context
+
+
+def test_privacy_mode_false_allows_ip_lookup():
+    """Verifies that privacy_mode=False allows IP lookup when ip_address=True."""
+    with patch("visionlog.visionlog.get_public_ip", return_value="1.2.3.4") as mock_ip:
+        logger = get_logger(ip_address=True, privacy_mode=False)
+        mock_ip.assert_called_once()
+    assert logger._context.get("ip_address") == "1.2.3.4"
+
+
+def test_privacy_mode_false_allows_geo_lookup():
+    """Verifies that privacy_mode=False allows geo lookup when geo_info=True and ip is provided."""
+    geo_data = {"city": "Boston", "region": "MA", "country": "US", "timezone": "America/New_York", "org": "AS1 Example"}
+    with patch("visionlog.visionlog.get_geo_info", return_value=geo_data) as mock_geo:
+        logger = get_logger(ip_address="1.2.3.4", geo_info=True, privacy_mode=False)
+        mock_geo.assert_called_once_with("1.2.3.4")
+    assert logger._context.get("city") == "Boston"
+
+
+def test_privacy_mode_false_allows_device_info():
+    """Verifies that privacy_mode=False allows device detection when device_info=True."""
+    device_data = {
+        "device_type": "desktop", "os": "Linux", "os_version": "5.15",
+        "device_brand": "", "device_model": "", "architecture": "64bit",
+        "browser": "", "browser_version": "",
+    }
+    with patch("visionlog.visionlog.get_device_info", return_value=device_data) as mock_device:
+        logger = get_logger(device_info=True, privacy_mode=False)
+        mock_device.assert_called_once()
+    assert logger._context.get("device_type") == "desktop"
