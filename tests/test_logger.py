@@ -29,14 +29,14 @@ def test_serialize_json():
 
 
 def test_add_common_fields():
-    """Validates presence of log_id, app_name, and log_level in every log."""
+    """Validates presence of log_id and logger_library in every log."""
     event_dict = {"event": "something happened"}
     result = add_common_fields(None, "info", event_dict)
     assert "log_id" in result, "log_id should be injected"
-    assert "app_name" in result, "app_name should be injected"
-    assert "log_level" in result, "log_level should be injected"
-    assert result["app_name"] == "visionlog"
-    assert result["log_level"] == "INFO"
+    assert "logger_library" in result, "logger_library should be injected"
+    assert "app_name" not in result, "app_name should not be present"
+    assert "log_level" not in result, "log_level should not be present"
+    assert result["logger_library"] == "visionlog"
 
 
 def test_get_logger_basic():

@@ -85,8 +85,7 @@ def get_device_info(user_agent: Optional[str] = None) -> Dict[str, str]:
 def add_common_fields(logger, method_name, event_dict) -> Dict[str, Any]:
     """Injects common metadata fields into every log."""
     event_dict.setdefault("log_id", str(uuid.uuid4()))
-    event_dict.setdefault("app_name", "visionlog")
-    event_dict.setdefault("log_level", method_name.upper())
+    event_dict.setdefault("logger_library", "visionlog")
     return event_dict
 
 def add_otel_context(logger, method_name, event_dict):
