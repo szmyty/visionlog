@@ -21,7 +21,6 @@ exclude = ["tests/**", "examples/**", "audits/**"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
-loguru = "^0.7.0"
 structlog = "^23.1.0"
 orjson = "^3.8.1"
 opentelemetry-api = {version = "^1.15.0", optional = true}
