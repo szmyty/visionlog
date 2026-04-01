@@ -18,7 +18,14 @@ def serialize_json(record, *args, **kwargs) -> str:
     return orjson.dumps(record, option=orjson.OPT_APPEND_NEWLINE).decode()
 
 def get_public_ip() -> Optional[str]:
-    """Fetches the user's public IP address."""
+    """Fetches the user's public IP address.
+
+    .. warning::
+        **PII / Privacy Notice**: The public IP address is Personally Identifiable
+        Information (PII) under regulations such as GDPR and CCPA.  Only call this
+        function when you have a lawful basis for collecting it and the caller has
+        set ``privacy_mode=False`` in :func:`get_logger`.
+    """
     try:
         return httpx.get("https://api64.ipify.org?format=json", timeout=5.0).json()["ip"]
     except (httpx.RequestError, httpx.HTTPStatusError, KeyError, ValueError) as error:
@@ -26,7 +33,15 @@ def get_public_ip() -> Optional[str]:
         return None
 
 def get_geo_info(ip: str) -> Dict[str, str]:
-    """Fetches geo-location & ISP info for a given IP address."""
+    """Fetches geo-location & ISP info for a given IP address.
+
+    .. warning::
+        **PII / Privacy Notice**: Geo-location data derived from an IP address
+        (city, region, country, timezone, ISP) may constitute PII under GDPR,
+        CCPA, and similar regulations.  Only call this function when you have a
+        lawful basis for collecting it and the caller has set
+        ``privacy_mode=False`` in :func:`get_logger`.
+    """
     try:
         response = httpx.get(f"https://ipinfo.io/{ip}/json", timeout=5.0).json()
         return {
@@ -41,7 +56,15 @@ def get_geo_info(ip: str) -> Dict[str, str]:
         return {}
 
 def get_device_info(user_agent: Optional[str] = None) -> Dict[str, str]:
-    """Extracts detailed device details from user-agent string."""
+    """Extracts detailed device details from user-agent string.
+
+    .. warning::
+        **PII / Privacy Notice**: Device fingerprint data (OS, browser, device
+        model, architecture) can be used to identify individual users and may
+        constitute PII under GDPR, CCPA, and similar regulations.  Only call
+        this function when you have a lawful basis for collecting it and the
+        caller has set ``privacy_mode=False`` in :func:`get_logger`.
+    """
     if user_agent is not None and DeviceDetector is None:
         raise ImportError(
             "Device detection requires the 'device-detector' package. "
@@ -93,10 +116,28 @@ def get_logger(
     user_agent: Optional[str] = None,
     geo_info: bool = False,
     enable_tracing: bool = False,
+    privacy_mode: bool = True,
 ) -> structlog.stdlib.BoundLogger:
     """
     Creates a structured logger with optional default fields.
 
+    .. warning::
+        **PII / Privacy Notice**: This library can enrich log records with
+        IP addresses, geo-location data (city, region, country, timezone, ISP),
+        and device fingerprint information (OS, browser, device model).  All of
+        these may constitute **Personally Identifiable Information (PII)** under
+        regulations such as **GDPR**, **CCPA**, **LGPD**, and others.
+
+        * ``privacy_mode`` is **enabled by default** (``True``) which prevents
+          any PII-bearing enrichment from being collected or logged.
+        * Set ``privacy_mode=False`` only when you have a lawful basis for
+          collecting this data, have notified users, and have reviewed your
+          compliance obligations.
+
+    - `privacy_mode`: When ``True`` (default), disables all PII enrichment —
+      IP lookup, geo-location lookup, and device detection are silently skipped
+      regardless of ``ip_address``, ``geo_info``, and ``device_info``.
+      Set to ``False`` to enable those features.
     - `user_id`: Tracks the user identity
     - `session_id`: Tracks user session
     - `ip_address`: Controls IP address logging:
@@ -137,22 +178,24 @@ def get_logger(
     if session_id:
         logger = logger.bind(session_id=session_id)
 
-    # Handle IP address logging
-    ip = None
-    if ip_address is True:
-        ip = get_public_ip()
-    elif isinstance(ip_address, str):
-        ip = ip_address
+    # PII enrichment is only performed when privacy_mode is disabled
+    if not privacy_mode:
+        # Handle IP address logging
+        ip = None
+        if ip_address is True:
+            ip = get_public_ip()
+        elif isinstance(ip_address, str):
+            ip = ip_address
 
-    if ip:
-        logger = logger.bind(ip_address=ip)
+        if ip:
+            logger = logger.bind(ip_address=ip)
 
-        if geo_info:
-            logger = logger.bind(**get_geo_info(ip))
+            if geo_info:
+                logger = logger.bind(**get_geo_info(ip))
 
-    # Handle device info
-    if device_info:
-        logger = logger.bind(**get_device_info(user_agent))
+        # Handle device info
+        if device_info:
+            logger = logger.bind(**get_device_info(user_agent))
 
     return logger
 

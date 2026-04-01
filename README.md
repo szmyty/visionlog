@@ -102,6 +102,36 @@ are not installed, `enable_tracing=True` is silently ignored.
 
 ---
 
+## 🔐 Privacy Considerations
+
+visionlog can enrich logs with IP, geo, and device metadata.
+
+These may be considered **Personally Identifiable Information (PII)** under regulations
+such as **GDPR**, **CCPA**, **LGPD**, and others.
+
+By default, `privacy_mode` is **enabled** and disables all PII enrichment features
+(IP lookup, geo-location lookup, and device detection).
+
+To enable enrichment, opt out of privacy mode explicitly:
+
+```python
+from visionlog import get_logger
+
+logger = get_logger(
+    "my-app",
+    ip_address=True,
+    geo_info=True,
+    device_info=True,
+    privacy_mode=False,
+)
+```
+
+> ⚠️ **Warning**: Only set `privacy_mode=False` when you have a lawful basis
+> for collecting this data, have notified your users, and have reviewed your
+> compliance obligations.
+
+---
+
 ## ⚡ **Why Use Visionlog?**
 
 ✅ **Super fast JSON serialization** using `orjson`  
