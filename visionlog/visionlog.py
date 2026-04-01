@@ -1,8 +1,6 @@
-import sys
 import threading
 import warnings
 import structlog
-import loguru
 import orjson
 import uuid
 import httpx
@@ -203,9 +201,6 @@ def get_logger(
     """
 
     configure_visionlog()
-
-    loguru.logger.remove()
-    loguru.logger.add(sys.stdout, format="{message}", serialize=False)
 
     logger = structlog.get_logger(service=service_name)
 
