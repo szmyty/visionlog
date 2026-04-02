@@ -4,7 +4,7 @@ import warnings
 
 import httpx
 import structlog
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 
 @functools.lru_cache(maxsize=1)
@@ -61,8 +61,10 @@ class NetworkEnricher:
     ``enrichers`` parameter.
 
     Args:
-        ip: When ``True``, auto-fetch the public IP address and bind it as
-            ``ip_address``.
+        ip: Controls IP address enrichment.  Pass ``True`` to auto-fetch the
+            public IP address and bind it as ``ip_address``.  Pass a string
+            to bind that value directly as ``ip_address`` without any HTTP
+            call.  ``False`` (default) disables IP enrichment entirely.
         geo: When ``True`` (and an IP was resolved), fetch geo-location data
             (city, region, country, timezone, org) and bind all fields.
         timeout: HTTP timeout in seconds used for geo-location requests.
@@ -80,7 +82,7 @@ class NetworkEnricher:
         )
     """
 
-    def __init__(self, ip: bool = False, geo: bool = False, timeout: float = 5.0) -> None:
+    def __init__(self, ip: Union[bool, str] = False, geo: bool = False, timeout: float = 5.0) -> None:
         self.ip = ip
         self.geo = geo
         self.timeout = timeout
@@ -89,12 +91,16 @@ class NetworkEnricher:
         self, logger: structlog.stdlib.BoundLogger
     ) -> structlog.stdlib.BoundLogger:
         """Enrich *logger* with IP and/or geo data and return it."""
-        if self.ip:
+        resolved_ip: Optional[str] = None
+        if self.ip is True:
             resolved_ip = get_public_ip()
-            if resolved_ip:
-                logger = logger.bind(ip_address=resolved_ip)
-                if self.geo:
-                    geo_data = get_geo_info(resolved_ip, self.timeout)
-                    if geo_data:
-                        logger = logger.bind(**geo_data)
+        elif isinstance(self.ip, str) and self.ip:
+            resolved_ip = self.ip
+
+        if resolved_ip:
+            logger = logger.bind(ip_address=resolved_ip)
+            if self.geo:
+                geo_data = get_geo_info(resolved_ip, self.timeout)
+                if geo_data:
+                    logger = logger.bind(**geo_data)
         return logger

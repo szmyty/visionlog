@@ -173,29 +173,29 @@ def get_logger(
     if session_id:
         logger = logger.bind(session_id=session_id)
 
-    # PII enrichment is only performed when privacy_mode is disabled
+    # Normalise enrichers list and prepend legacy-param-derived enrichers for
+    # backward compatibility.  All PII enrichment is delegated to enrichers.
+    enrichers = enrichers or []
     if not privacy_mode:
-        # Handle IP address logging
-        ip = None
-        if ip_address is True:
-            ip = None if disable_network else get_public_ip()
+        legacy_enrichers: List[Enricher] = []
+
+        # IP address and geo-location enrichment
+        if ip_address is True and not disable_network:
+            legacy_enrichers.append(NetworkEnricher(ip=True, geo=geo_info))
         elif isinstance(ip_address, str):
-            ip = ip_address
+            legacy_enrichers.append(
+                NetworkEnricher(ip=ip_address, geo=geo_info and not disable_network)
+            )
 
-        if ip:
-            logger = logger.bind(ip_address=ip)
-
-            if geo_info and not disable_network:
-                logger = logger.bind(**get_geo_info(ip))
-
-        # Handle device info
+        # Device information enrichment
         if device_info:
-            logger = DeviceEnricher(enabled=True, user_agent=user_agent).enrich(logger)
+            legacy_enrichers.append(DeviceEnricher(enabled=True, user_agent=user_agent))
 
-    # Apply pluggable enrichers
-    if enrichers:
-        for enricher in enrichers:
-            logger = enricher.enrich(logger)
+        enrichers = legacy_enrichers + list(enrichers)
+
+    # Apply enrichers sequentially
+    for enricher in enrichers:
+        logger = enricher.enrich(logger)
 
     return logger
 

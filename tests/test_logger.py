@@ -43,7 +43,7 @@ def test_add_common_fields():
 
 def test_get_logger_basic():
     """Ensures logger initializes correctly without triggering network calls."""
-    with patch("visionlog.visionlog.get_public_ip") as mock_ip:
+    with patch("visionlog.enrichers.network.get_public_ip") as mock_ip:
         logger = get_logger()
         mock_ip.assert_not_called()
     assert logger is not None
@@ -151,7 +151,7 @@ def test_get_geo_info_invalid_json():
 
 def test_privacy_mode_true_skips_ip_lookup():
     """Verifies that privacy_mode=True (default) prevents IP lookup even when ip_address=True."""
-    with patch("visionlog.visionlog.get_public_ip") as mock_ip:
+    with patch("visionlog.enrichers.network.get_public_ip") as mock_ip:
         logger = get_logger(ip_address=True, privacy_mode=True)
         mock_ip.assert_not_called()
     assert "ip_address" not in logger._context
@@ -159,7 +159,7 @@ def test_privacy_mode_true_skips_ip_lookup():
 
 def test_privacy_mode_true_skips_geo_lookup():
     """Verifies that privacy_mode=True skips geo lookup even when geo_info=True."""
-    with patch("visionlog.visionlog.get_geo_info") as mock_geo:
+    with patch("visionlog.enrichers.network.get_geo_info") as mock_geo:
         logger = get_logger(ip_address="1.2.3.4", geo_info=True, privacy_mode=True)
         mock_geo.assert_not_called()
     assert "city" not in logger._context
@@ -176,7 +176,7 @@ def test_privacy_mode_true_skips_device_info():
 
 def test_privacy_mode_default_is_true():
     """Verifies that privacy_mode defaults to True, preventing PII collection without opt-in."""
-    with patch("visionlog.visionlog.get_public_ip") as mock_ip, \
+    with patch("visionlog.enrichers.network.get_public_ip") as mock_ip, \
          patch("visionlog.enrichers.device.get_device_info") as mock_device:
         logger = get_logger(ip_address=True, device_info=True)
         mock_ip.assert_not_called()
@@ -187,7 +187,7 @@ def test_privacy_mode_default_is_true():
 
 def test_privacy_mode_false_allows_ip_lookup():
     """Verifies that privacy_mode=False allows IP lookup when ip_address=True."""
-    with patch("visionlog.visionlog.get_public_ip", return_value="1.2.3.4") as mock_ip:
+    with patch("visionlog.enrichers.network.get_public_ip", return_value="1.2.3.4") as mock_ip:
         logger = get_logger(ip_address=True, privacy_mode=False)
         mock_ip.assert_called_once()
     assert logger._context.get("ip_address") == "1.2.3.4"
@@ -196,9 +196,9 @@ def test_privacy_mode_false_allows_ip_lookup():
 def test_privacy_mode_false_allows_geo_lookup():
     """Verifies that privacy_mode=False allows geo lookup when geo_info=True and ip is provided."""
     geo_data = {"city": "Boston", "region": "MA", "country": "US", "timezone": "America/New_York", "org": "AS1 Example"}
-    with patch("visionlog.visionlog.get_geo_info", return_value=geo_data) as mock_geo:
+    with patch("visionlog.enrichers.network.get_geo_info", return_value=geo_data) as mock_geo:
         logger = get_logger(ip_address="1.2.3.4", geo_info=True, privacy_mode=False)
-        mock_geo.assert_called_once_with("1.2.3.4")
+        mock_geo.assert_called_once_with("1.2.3.4", 5.0)
     assert logger._context.get("city") == "Boston"
 
 
@@ -217,7 +217,7 @@ def test_privacy_mode_false_allows_device_info():
 
 def test_disable_network_skips_ip_lookup():
     """Verifies that disable_network=True prevents get_public_ip from being called."""
-    with patch("visionlog.visionlog.get_public_ip") as mock_ip:
+    with patch("visionlog.enrichers.network.get_public_ip") as mock_ip:
         logger = get_logger(ip_address=True, privacy_mode=False, disable_network=True)
         mock_ip.assert_not_called()
     assert "ip_address" not in logger._context
@@ -225,7 +225,7 @@ def test_disable_network_skips_ip_lookup():
 
 def test_disable_network_skips_geo_lookup():
     """Verifies that disable_network=True prevents get_geo_info from being called."""
-    with patch("visionlog.visionlog.get_geo_info") as mock_geo:
+    with patch("visionlog.enrichers.network.get_geo_info") as mock_geo:
         logger = get_logger(ip_address="1.2.3.4", geo_info=True, privacy_mode=False, disable_network=True)
         mock_geo.assert_not_called()
     assert "city" not in logger._context
@@ -234,7 +234,7 @@ def test_disable_network_skips_geo_lookup():
 
 def test_disable_network_false_allows_ip_lookup():
     """Verifies that disable_network=False (default) still allows IP lookup."""
-    with patch("visionlog.visionlog.get_public_ip", return_value="9.9.9.9") as mock_ip:
+    with patch("visionlog.enrichers.network.get_public_ip", return_value="9.9.9.9") as mock_ip:
         logger = get_logger(ip_address=True, privacy_mode=False, disable_network=False)
         mock_ip.assert_called_once()
     assert logger._context.get("ip_address") == "9.9.9.9"
@@ -255,7 +255,7 @@ def test_disable_network_allows_device_info():
 
 def test_disable_network_default_is_false():
     """Verifies that disable_network defaults to False (does not block network calls)."""
-    with patch("visionlog.visionlog.get_public_ip", return_value="5.5.5.5") as mock_ip:
+    with patch("visionlog.enrichers.network.get_public_ip", return_value="5.5.5.5") as mock_ip:
         logger = get_logger(ip_address=True, privacy_mode=False)
         mock_ip.assert_called_once()
     assert logger._context.get("ip_address") == "5.5.5.5"
