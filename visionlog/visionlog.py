@@ -112,7 +112,7 @@ _CONFIGURED = False
 _CONFIGURE_LOCK = threading.Lock()
 
 
-def configure_visionlog(renderer=None, extra_processors=None, renderer_name: str = "json") -> None:
+def configure_visionlog(renderer=None, extra_processors=None, renderer_name: str = "json", id_generator: Optional[Callable[[], str]] = None) -> None:
     """Configure structlog for visionlog.
 
     This function is idempotent: it only configures structlog once per process.
@@ -128,6 +128,10 @@ def configure_visionlog(renderer=None, extra_processors=None, renderer_name: str
         renderer_name: Name of the built-in renderer to use when *renderer* is
             ``None``.  Supported values are ``"json"`` (default),
             ``"console"``, and ``"logfmt"``.
+        id_generator: Optional callable that returns a string ID for each log
+            record.  When provided, it is called once per log entry to produce
+            the ``log_id`` field.  When ``None`` (default) a UUID4 string is
+            used.
     """
     global _CONFIGURED
     if not _CONFIGURED:
@@ -135,10 +139,19 @@ def configure_visionlog(renderer=None, extra_processors=None, renderer_name: str
             if not _CONFIGURED:
                 if renderer is None:
                     renderer = _build_renderer_from_name(renderer_name)
+                if id_generator is not None:
+                    _gen = id_generator
+                    def _custom_id_fields_processor(logger, method_name, event_dict) -> Dict[str, Any]:
+                        event_dict.setdefault("log_id", _gen())
+                        event_dict.setdefault("logger_library", "visionlog")
+                        return event_dict
+                    fields_processor = _custom_id_fields_processor
+                else:
+                    fields_processor = add_common_fields
                 processors = [
                     structlog.processors.TimeStamper(fmt="iso"),
                     structlog.processors.add_log_level,
-                    add_common_fields,
+                    fields_processor,
                     add_otel_context,
                 ]
                 if extra_processors:
@@ -250,6 +263,7 @@ def get_logger(
     hostname: bool = False
     environment: Optional[str] = None
     extra_processors: Optional[List[Processor]] = None
+    id_generator: Optional[Callable[[], str]] = None
     if config is not None:
         service_name = config.service_name
         user_id = config.user_id
@@ -262,8 +276,9 @@ def get_logger(
         hostname = config.hostname
         environment = config.environment
         extra_processors = config.extra_processors
+        id_generator = config.id_generator
 
-    configure_visionlog(renderer=renderer, renderer_name=renderer_name, extra_processors=extra_processors)
+    configure_visionlog(renderer=renderer, renderer_name=renderer_name, extra_processors=extra_processors, id_generator=id_generator)
 
     logger = structlog.get_logger(service=service_name)
 

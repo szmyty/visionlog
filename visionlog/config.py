@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from visionlog.visionlog import Enricher, Processor
 
@@ -38,6 +38,10 @@ class LoggerConfig:
             injected into the pipeline after the core processors and before
             the renderer.  Use this to extend the processor pipeline with
             custom logic without replacing the built-in defaults.
+        id_generator: Optional callable that returns a string ID for each log
+            record.  When provided, it is called once per log entry to produce
+            the ``log_id`` field.  When ``None`` (default) a UUID4 string is
+            used, preserving the original behaviour.
     """
 
     service_name: str
@@ -51,3 +55,4 @@ class LoggerConfig:
     renderer_name: str = "json"
     renderer: Optional[object] = None
     extra_processors: Optional[List[Processor]] = None
+    id_generator: Optional[Callable[[], str]] = None

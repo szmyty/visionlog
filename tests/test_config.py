@@ -170,3 +170,36 @@ def test_loggerconfig_extra_processors_empty_list():
     """Verifies that extra_processors can be set to an empty list."""
     cfg = LoggerConfig(service_name="svc", extra_processors=[])
     assert cfg.extra_processors == []
+
+
+# ---------------------------------------------------------------------------
+# id_generator field
+# ---------------------------------------------------------------------------
+
+def test_loggerconfig_id_generator_default_is_none():
+    """Verifies that id_generator defaults to None."""
+    cfg = LoggerConfig(service_name="svc")
+    assert cfg.id_generator is None
+
+
+def test_loggerconfig_id_generator_populated():
+    """Verifies that id_generator can be set to a callable."""
+    def my_generator() -> str:
+        return "custom-id-123"
+
+    cfg = LoggerConfig(service_name="svc", id_generator=my_generator)
+    assert cfg.id_generator is my_generator
+    assert cfg.id_generator() == "custom-id-123"
+
+
+def test_loggerconfig_id_generator_lambda():
+    """Verifies that id_generator accepts a lambda."""
+    counter = {"n": 0}
+
+    def sequential_id() -> str:
+        counter["n"] += 1
+        return f"id-{counter['n']}"
+
+    cfg = LoggerConfig(service_name="svc", id_generator=sequential_id)
+    assert cfg.id_generator() == "id-1"
+    assert cfg.id_generator() == "id-2"
