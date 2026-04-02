@@ -25,6 +25,7 @@ def test_loggerconfig_defaults():
     assert cfg.privacy_mode is True
     assert cfg.disable_network is False
     assert cfg.enrichers == []
+    assert cfg.hostname is False
     assert cfg.environment is None
     assert cfg.renderer_name == "json"
     assert cfg.renderer is None
@@ -58,6 +59,16 @@ def test_loggerconfig_privacy_mode_false():
 def test_loggerconfig_disable_network_true():
     cfg = LoggerConfig(service_name="svc", disable_network=True)
     assert cfg.disable_network is True
+
+
+def test_loggerconfig_hostname_default():
+    cfg = LoggerConfig(service_name="svc")
+    assert cfg.hostname is False
+
+
+def test_loggerconfig_hostname_true():
+    cfg = LoggerConfig(service_name="svc", hostname=True)
+    assert cfg.hostname is True
 
 
 def test_loggerconfig_environment():
