@@ -589,15 +589,13 @@ def test_get_logger_with_config_renderer():
         config = LoggerConfig(service_name="svc", renderer=custom_renderer)
         with patch("visionlog.visionlog.configure_visionlog", wraps=configure_visionlog) as mock_cfg:
             get_logger(config=config)
-        mock_cfg.assert_called_once_with(renderer=custom_renderer, renderer_name="json", extra_processors=None)
+        mock_cfg.assert_called_once_with(renderer=custom_renderer, renderer_name="json", extra_processors=None, id_generator=None)
     finally:
         vl_module._CONFIGURED = original
 
 
 def test_get_logger_with_config_extra_processors():
     """Verifies that config.extra_processors is passed to configure_visionlog."""
-    import structlog as _structlog
-
     def my_processor(logger, method_name, event_dict):
         event_dict["custom"] = True
         return event_dict
@@ -608,7 +606,7 @@ def test_get_logger_with_config_extra_processors():
         config = LoggerConfig(service_name="svc", extra_processors=[my_processor])
         with patch("visionlog.visionlog.configure_visionlog", wraps=configure_visionlog) as mock_cfg:
             get_logger(config=config)
-        mock_cfg.assert_called_once_with(renderer=None, renderer_name="json", extra_processors=[my_processor])
+        mock_cfg.assert_called_once_with(renderer=None, renderer_name="json", extra_processors=[my_processor], id_generator=None)
     finally:
         vl_module._CONFIGURED = original
 
@@ -763,6 +761,138 @@ def test_get_logger_with_config_renderer_name_and_custom_renderer_uses_custom():
             get_logger(config=config)
         call_processors = mock_configure.call_args[1]["processors"]
         assert call_processors[-1] is custom_renderer
+    finally:
+        vl_module._CONFIGURED = original
+
+
+# ---------------------------------------------------------------------------
+# id_generator tests
+# ---------------------------------------------------------------------------
+
+def test_configure_visionlog_custom_id_generator_is_used():
+    """Verifies that a custom id_generator is called when producing log_id."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        calls = []
+
+        def my_id_gen() -> str:
+            calls.append(1)
+            return "custom-id-abc"
+
+        with patch("structlog.configure") as mock_configure:
+            configure_visionlog(id_generator=my_id_gen)
+
+        # Retrieve the fields processor injected into the pipeline.
+        call_processors = mock_configure.call_args[1]["processors"]
+        fields_processor = call_processors[2]  # 3rd processor after TimeStamper, add_log_level
+
+        # Simulate a processor call
+        event_dict = {"event": "test"}
+        result = fields_processor(None, "info", event_dict)
+
+        assert result["log_id"] == "custom-id-abc"
+        assert result["logger_library"] == "visionlog"
+        assert len(calls) == 1
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_configure_visionlog_default_id_generator_uses_uuid4():
+    """Verifies that the default (no id_generator) still produces a UUID4 log_id."""
+    import re
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        with patch("structlog.configure") as mock_configure:
+            configure_visionlog()
+
+        call_processors = mock_configure.call_args[1]["processors"]
+        fields_processor = call_processors[2]
+
+        event_dict = {"event": "test"}
+        result = fields_processor(None, "info", event_dict)
+
+        uuid4_pattern = re.compile(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        )
+        assert uuid4_pattern.match(result["log_id"]), (
+            f"log_id '{result['log_id']}' does not look like a UUID4"
+        )
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_get_logger_with_config_id_generator():
+    """Verifies that config.id_generator is passed through to configure_visionlog."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+
+        def my_id_gen() -> str:
+            return "trace-id-xyz"
+
+        config = LoggerConfig(service_name="svc", id_generator=my_id_gen)
+        with patch("structlog.configure") as mock_configure:
+            get_logger(config=config)
+
+        call_processors = mock_configure.call_args[1]["processors"]
+        fields_processor = call_processors[2]
+
+        event_dict = {"event": "test"}
+        result = fields_processor(None, "info", event_dict)
+        assert result["log_id"] == "trace-id-xyz"
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_get_logger_no_config_id_generator_uses_uuid4():
+    """Verifies that omitting id_generator (no config) still falls back to UUID4."""
+    import re
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        with patch("structlog.configure") as mock_configure:
+            get_logger()
+
+        call_processors = mock_configure.call_args[1]["processors"]
+        fields_processor = call_processors[2]
+
+        event_dict = {"event": "test"}
+        result = fields_processor(None, "info", event_dict)
+
+        uuid4_pattern = re.compile(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        )
+        assert uuid4_pattern.match(result["log_id"]), (
+            f"log_id '{result['log_id']}' does not look like a UUID4"
+        )
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_custom_id_generator_called_per_log_entry():
+    """Verifies that a custom id_generator produces a new ID for each log entry."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        counter = {"n": 0}
+
+        def sequential_id() -> str:
+            counter["n"] += 1
+            return f"id-{counter['n']}"
+
+        with patch("structlog.configure") as mock_configure:
+            configure_visionlog(id_generator=sequential_id)
+
+        call_processors = mock_configure.call_args[1]["processors"]
+        fields_processor = call_processors[2]
+
+        result1 = fields_processor(None, "info", {"event": "first"})
+        result2 = fields_processor(None, "info", {"event": "second"})
+
+        assert result1["log_id"] == "id-1"
+        assert result2["log_id"] == "id-2"
     finally:
         vl_module._CONFIGURED = original
 
