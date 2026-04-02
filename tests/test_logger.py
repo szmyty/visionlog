@@ -74,28 +74,28 @@ def test_get_device_info_no_agent():
 
 def test_get_device_info_missing_package_raises():
     """Verifies that an ImportError is raised when user_agent is provided but DeviceDetector is not installed."""
-    import visionlog.visionlog as vl_module
+    import visionlog.enrichers.device as device_module
 
-    original = vl_module.DeviceDetector
+    original = device_module.DeviceDetector
     try:
-        vl_module.DeviceDetector = None
+        device_module.DeviceDetector = None
         with pytest.raises(ImportError, match="pip install visionlog\\[device\\]"):
             get_device_info(user_agent="Mozilla/5.0")
     finally:
-        vl_module.DeviceDetector = original
+        device_module.DeviceDetector = original
 
 
 def test_get_device_info_missing_package_no_agent_ok():
     """Verifies that no error is raised when DeviceDetector is missing but no user_agent is given."""
-    import visionlog.visionlog as vl_module
+    import visionlog.enrichers.device as device_module
 
-    original = vl_module.DeviceDetector
+    original = device_module.DeviceDetector
     try:
-        vl_module.DeviceDetector = None
+        device_module.DeviceDetector = None
         info = get_device_info(user_agent=None)
         assert isinstance(info, dict)
     finally:
-        vl_module.DeviceDetector = original
+        device_module.DeviceDetector = original
 
 
 def test_get_public_ip_failure():
@@ -168,7 +168,7 @@ def test_privacy_mode_true_skips_geo_lookup():
 
 def test_privacy_mode_true_skips_device_info():
     """Verifies that privacy_mode=True skips device detection even when device_info=True."""
-    with patch("visionlog.visionlog.get_device_info") as mock_device:
+    with patch("visionlog.enrichers.device.get_device_info") as mock_device:
         logger = get_logger(device_info=True, privacy_mode=True)
         mock_device.assert_not_called()
     assert "device_type" not in logger._context
@@ -177,7 +177,7 @@ def test_privacy_mode_true_skips_device_info():
 def test_privacy_mode_default_is_true():
     """Verifies that privacy_mode defaults to True, preventing PII collection without opt-in."""
     with patch("visionlog.visionlog.get_public_ip") as mock_ip, \
-         patch("visionlog.visionlog.get_device_info") as mock_device:
+         patch("visionlog.enrichers.device.get_device_info") as mock_device:
         logger = get_logger(ip_address=True, device_info=True)
         mock_ip.assert_not_called()
         mock_device.assert_not_called()
@@ -209,7 +209,7 @@ def test_privacy_mode_false_allows_device_info():
         "device_brand": "", "device_model": "", "architecture": "64bit",
         "browser": "", "browser_version": "",
     }
-    with patch("visionlog.visionlog.get_device_info", return_value=device_data) as mock_device:
+    with patch("visionlog.enrichers.device.get_device_info", return_value=device_data) as mock_device:
         logger = get_logger(device_info=True, privacy_mode=False)
         mock_device.assert_called_once()
     assert logger._context.get("device_type") == "desktop"
@@ -247,7 +247,7 @@ def test_disable_network_allows_device_info():
         "device_brand": "", "device_model": "", "architecture": "64bit",
         "browser": "", "browser_version": "",
     }
-    with patch("visionlog.visionlog.get_device_info", return_value=device_data) as mock_device:
+    with patch("visionlog.enrichers.device.get_device_info", return_value=device_data) as mock_device:
         logger = get_logger(device_info=True, privacy_mode=False, disable_network=True)
         mock_device.assert_called_once()
     assert logger._context.get("device_type") == "desktop"

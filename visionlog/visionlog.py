@@ -1,12 +1,11 @@
 import threading
-import warnings
 import structlog
 import orjson
 import uuid
-import platform
 from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
 
 from visionlog.enrichers.network import get_public_ip, get_geo_info, NetworkEnricher  # noqa: F401
+from visionlog.enrichers.device import get_device_info, DeviceEnricher  # noqa: F401
 
 
 @runtime_checkable
@@ -38,42 +37,9 @@ class Enricher(Protocol):
         """Enrich *logger* with additional context and return it."""
         ...
 
-try:
-    from device_detector import DeviceDetector
-except ImportError:
-    DeviceDetector = None
-
 def serialize_json(record, *args, **kwargs) -> str:
     """Serialize logs using orjson for high-performance JSON output."""
     return orjson.dumps(record, option=orjson.OPT_APPEND_NEWLINE).decode()
-
-def get_device_info(user_agent: Optional[str] = None) -> Dict[str, str]:
-    """Extracts detailed device details from user-agent string.
-
-    .. warning::
-        **PII / Privacy Notice**: Device fingerprint data (OS, browser, device
-        model, architecture) can be used to identify individual users and may
-        constitute PII under GDPR, CCPA, and similar regulations.  Only call
-        this function when you have a lawful basis for collecting it and the
-        caller has set ``privacy_mode=False`` in :func:`get_logger`.
-    """
-    if user_agent is not None and DeviceDetector is None:
-        raise ImportError(
-            "Device detection requires the 'device-detector' package. "
-            "Install it with: pip install visionlog[device]"
-        )
-    device = DeviceDetector(user_agent).parse() if user_agent and DeviceDetector else None
-
-    return {
-        "device_type": device.device_type() if device else platform.system(),
-        "os": device.os_name() if device else platform.system(),
-        "os_version": device.os_version() if device else platform.release(),
-        "device_brand": device.device_brand() if device else "",
-        "device_model": device.device_model() if device else "",
-        "architecture": platform.architecture()[0],  # 32-bit / 64-bit
-        "browser": device.client_name() if device else "",
-        "browser_version": device.client_version() if device else "",
-    }
 
 def add_common_fields(logger, method_name, event_dict) -> Dict[str, Any]:
     """Injects common metadata fields into every log."""
@@ -224,7 +190,7 @@ def get_logger(
 
         # Handle device info
         if device_info:
-            logger = logger.bind(**get_device_info(user_agent))
+            logger = DeviceEnricher(enabled=True, user_agent=user_agent).enrich(logger)
 
     # Apply pluggable enrichers
     if enrichers:
