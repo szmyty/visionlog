@@ -31,6 +31,23 @@ def test_serialize_json():
     assert parsed["level"] == "info"
 
 
+def test_serialize_json_fallback_on_error():
+    """Verifies fallback to str(record) when orjson serialization fails."""
+    non_serializable = {"event": object()}
+    with patch("orjson.dumps", side_effect=TypeError("not serializable")):
+        result = serialize_json(non_serializable)
+    assert result == str(non_serializable)
+
+
+def test_serialize_json_fallback_emits_warning():
+    """Verifies that a warning is logged when orjson serialization fails."""
+    mock_logger = MagicMock()
+    with patch("orjson.dumps", side_effect=TypeError("not serializable")):
+        with patch("logging.getLogger", return_value=mock_logger):
+            serialize_json({"event": object()})
+    mock_logger.warning.assert_called_once()
+
+
 def test_add_common_fields():
     """Validates presence of log_id and logger_library in every log."""
     event_dict = {"event": "something happened"}

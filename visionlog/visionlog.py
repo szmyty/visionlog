@@ -1,3 +1,4 @@
+import logging
 import socket
 import threading
 import structlog
@@ -49,8 +50,18 @@ class Enricher(Protocol):
 Processor = Callable[..., Any]
 
 def serialize_json(record, *args, **kwargs) -> str:
-    """Serialize logs using orjson for high-performance JSON output."""
-    return orjson.dumps(record, option=orjson.OPT_APPEND_NEWLINE).decode()
+    """Serialize logs using orjson for high-performance JSON output.
+
+    Falls back to ``str(record)`` when orjson cannot serialize the record so
+    that logging pipelines are never interrupted by serialization errors.
+    """
+    try:
+        return orjson.dumps(record, option=orjson.OPT_APPEND_NEWLINE).decode()
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "orjson serialization failed; falling back to str(record)"
+        )
+        return str(record)
 
 
 def _build_renderer_from_name(name: str):
