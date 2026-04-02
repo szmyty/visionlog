@@ -44,6 +44,28 @@ def serialize_json(record, *args, **kwargs) -> str:
     """Serialize logs using orjson for high-performance JSON output."""
     return orjson.dumps(record, option=orjson.OPT_APPEND_NEWLINE).decode()
 
+
+def _build_renderer_from_name(name: str):
+    """Return a structlog renderer for *name*.
+
+    Supported names:
+
+    * ``"json"`` – :class:`structlog.processors.JSONRenderer` backed by orjson
+      (default).
+    * ``"console"`` – :class:`structlog.dev.ConsoleRenderer` for human-readable
+      output.
+    * ``"logfmt"`` – :class:`structlog.processors.LogfmtRenderer` for
+      `logfmt <https://brandur.org/logfmt>`_-style output.
+
+    Unknown names fall back to the JSON renderer.
+    """
+    if name == "console":
+        return structlog.dev.ConsoleRenderer()
+    if name == "logfmt":
+        return structlog.processors.LogfmtRenderer()
+    # "json" or any unrecognised value → JSON (default)
+    return structlog.processors.JSONRenderer(serializer=serialize_json)
+
 def add_common_fields(logger, method_name, event_dict) -> Dict[str, Any]:
     """Injects common metadata fields into every log."""
     event_dict.setdefault("log_id", str(uuid.uuid4()))
@@ -71,7 +93,7 @@ _CONFIGURED = False
 _CONFIGURE_LOCK = threading.Lock()
 
 
-def configure_visionlog(renderer=None, extra_processors=None) -> None:
+def configure_visionlog(renderer=None, extra_processors=None, renderer_name: str = "json") -> None:
     """Configure structlog for visionlog.
 
     This function is idempotent: it only configures structlog once per process.
@@ -80,17 +102,20 @@ def configure_visionlog(renderer=None, extra_processors=None) -> None:
 
     Args:
         renderer: Optional structlog processor to use as the final renderer.
-            Defaults to :class:`structlog.processors.JSONRenderer` with the
-            :func:`serialize_json` serializer.
+            When provided, takes precedence over *renderer_name*.
+            Defaults to ``None`` (use *renderer_name* to select a built-in).
         extra_processors: Optional list of additional structlog processors to
             insert before the renderer.
+        renderer_name: Name of the built-in renderer to use when *renderer* is
+            ``None``.  Supported values are ``"json"`` (default),
+            ``"console"``, and ``"logfmt"``.
     """
     global _CONFIGURED
     if not _CONFIGURED:
         with _CONFIGURE_LOCK:
             if not _CONFIGURED:
                 if renderer is None:
-                    renderer = structlog.processors.JSONRenderer(serializer=serialize_json)
+                    renderer = _build_renderer_from_name(renderer_name)
                 processors = [
                     structlog.processors.TimeStamper(fmt="iso"),
                     structlog.processors.add_log_level,
@@ -202,6 +227,7 @@ def get_logger(
 
     # When a LoggerConfig is provided, its fields take precedence.
     renderer = None
+    renderer_name: str = "json"
     environment: Optional[str] = None
     if config is not None:
         service_name = config.service_name
@@ -211,9 +237,10 @@ def get_logger(
         disable_network = config.disable_network
         enrichers = list(config.enrichers)
         renderer = config.renderer
+        renderer_name = config.renderer_name
         environment = config.environment
 
-    configure_visionlog(renderer=renderer)
+    configure_visionlog(renderer=renderer, renderer_name=renderer_name)
 
     logger = structlog.get_logger(service=service_name)
 

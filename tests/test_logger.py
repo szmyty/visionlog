@@ -557,7 +557,7 @@ def test_get_logger_with_config_renderer():
         config = LoggerConfig(service_name="svc", renderer=custom_renderer)
         with patch("visionlog.visionlog.configure_visionlog", wraps=configure_visionlog) as mock_cfg:
             get_logger(config=config)
-        mock_cfg.assert_called_once_with(renderer=custom_renderer)
+        mock_cfg.assert_called_once_with(renderer=custom_renderer, renderer_name="json")
     finally:
         vl_module._CONFIGURED = original
 
@@ -574,4 +574,122 @@ def test_get_logger_kwargs_still_work_without_config():
     assert logger._context.get("service") == "kwarg-app"
     assert logger._context.get("user_id") == "kwarg-user"
     assert logger._context.get("session_id") == "kwarg-sess"
+
+
+# ---------------------------------------------------------------------------
+# renderer_name / _build_renderer_from_name tests
+# ---------------------------------------------------------------------------
+
+from visionlog.visionlog import _build_renderer_from_name  # noqa: E402
+
+
+def test_build_renderer_from_name_json():
+    """Verifies that 'json' produces a JSONRenderer."""
+    renderer = _build_renderer_from_name("json")
+    assert isinstance(renderer, structlog.processors.JSONRenderer)
+
+
+def test_build_renderer_from_name_console():
+    """Verifies that 'console' produces a ConsoleRenderer."""
+    renderer = _build_renderer_from_name("console")
+    assert isinstance(renderer, structlog.dev.ConsoleRenderer)
+
+
+def test_build_renderer_from_name_logfmt():
+    """Verifies that 'logfmt' produces a LogfmtRenderer."""
+    renderer = _build_renderer_from_name("logfmt")
+    assert isinstance(renderer, structlog.processors.LogfmtRenderer)
+
+
+def test_build_renderer_from_name_unknown_falls_back_to_json():
+    """Verifies that an unknown renderer_name falls back to JSONRenderer."""
+    renderer = _build_renderer_from_name("unknown-format")
+    assert isinstance(renderer, structlog.processors.JSONRenderer)
+
+
+def test_configure_visionlog_renderer_name_console():
+    """Verifies that renderer_name='console' selects ConsoleRenderer."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        with patch("structlog.configure") as mock_configure:
+            configure_visionlog(renderer_name="console")
+        call_processors = mock_configure.call_args[1]["processors"]
+        assert isinstance(call_processors[-1], structlog.dev.ConsoleRenderer)
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_configure_visionlog_renderer_name_logfmt():
+    """Verifies that renderer_name='logfmt' selects LogfmtRenderer."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        with patch("structlog.configure") as mock_configure:
+            configure_visionlog(renderer_name="logfmt")
+        call_processors = mock_configure.call_args[1]["processors"]
+        assert isinstance(call_processors[-1], structlog.processors.LogfmtRenderer)
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_configure_visionlog_custom_renderer_overrides_renderer_name():
+    """Verifies that a custom renderer object takes precedence over renderer_name."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        custom_renderer = structlog.dev.ConsoleRenderer()
+        with patch("structlog.configure") as mock_configure:
+            configure_visionlog(renderer=custom_renderer, renderer_name="json")
+        call_processors = mock_configure.call_args[1]["processors"]
+        assert call_processors[-1] is custom_renderer
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_get_logger_with_config_renderer_name_console():
+    """Verifies that config.renderer_name='console' selects ConsoleRenderer."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        config = LoggerConfig(service_name="svc", renderer_name="console")
+        with patch("structlog.configure") as mock_configure:
+            get_logger(config=config)
+        call_processors = mock_configure.call_args[1]["processors"]
+        assert isinstance(call_processors[-1], structlog.dev.ConsoleRenderer)
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_get_logger_with_config_renderer_name_logfmt():
+    """Verifies that config.renderer_name='logfmt' selects LogfmtRenderer."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        config = LoggerConfig(service_name="svc", renderer_name="logfmt")
+        with patch("structlog.configure") as mock_configure:
+            get_logger(config=config)
+        call_processors = mock_configure.call_args[1]["processors"]
+        assert isinstance(call_processors[-1], structlog.processors.LogfmtRenderer)
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_get_logger_with_config_renderer_name_and_custom_renderer_uses_custom():
+    """Verifies that config.renderer takes precedence over config.renderer_name."""
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        custom_renderer = structlog.dev.ConsoleRenderer()
+        config = LoggerConfig(
+            service_name="svc",
+            renderer_name="logfmt",
+            renderer=custom_renderer,
+        )
+        with patch("structlog.configure") as mock_configure:
+            get_logger(config=config)
+        call_processors = mock_configure.call_args[1]["processors"]
+        assert call_processors[-1] is custom_renderer
+    finally:
+        vl_module._CONFIGURED = original
 

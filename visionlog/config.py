@@ -24,8 +24,12 @@ class LoggerConfig:
             applied after built-in enrichment.
         environment: Optional deployment environment label (e.g.
             ``"production"``, ``"staging"``).
+        renderer_name: Name of the built-in renderer to use.  Supported
+            values are ``"json"`` (default), ``"console"``, and ``"logfmt"``.
+            Ignored when ``renderer`` is also provided.
         renderer: Optional structlog processor used as the final renderer.
-            When ``None`` the default JSON renderer is used.
+            When provided, takes precedence over ``renderer_name``.
+            When ``None`` the renderer selected by ``renderer_name`` is used.
     """
 
     service_name: str
@@ -35,4 +39,5 @@ class LoggerConfig:
     disable_network: bool = False
     enrichers: List[Enricher] = field(default_factory=list)
     environment: Optional[str] = None
+    renderer_name: str = "json"
     renderer: Optional[object] = None

@@ -26,6 +26,7 @@ def test_loggerconfig_defaults():
     assert cfg.disable_network is False
     assert cfg.enrichers == []
     assert cfg.environment is None
+    assert cfg.renderer_name == "json"
     assert cfg.renderer is None
 
 
@@ -68,6 +69,24 @@ def test_loggerconfig_renderer():
     renderer = structlog.dev.ConsoleRenderer()
     cfg = LoggerConfig(service_name="svc", renderer=renderer)
     assert cfg.renderer is renderer
+
+
+def test_loggerconfig_renderer_name_default():
+    """Verifies that renderer_name defaults to 'json'."""
+    cfg = LoggerConfig(service_name="svc")
+    assert cfg.renderer_name == "json"
+
+
+def test_loggerconfig_renderer_name_console():
+    """Verifies that renderer_name can be set to 'console'."""
+    cfg = LoggerConfig(service_name="svc", renderer_name="console")
+    assert cfg.renderer_name == "console"
+
+
+def test_loggerconfig_renderer_name_logfmt():
+    """Verifies that renderer_name can be set to 'logfmt'."""
+    cfg = LoggerConfig(service_name="svc", renderer_name="logfmt")
+    assert cfg.renderer_name == "logfmt"
 
 
 # ---------------------------------------------------------------------------
