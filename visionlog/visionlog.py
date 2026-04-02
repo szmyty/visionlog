@@ -2,7 +2,10 @@ import threading
 import structlog
 import orjson
 import uuid
-from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, Union, runtime_checkable
+
+if TYPE_CHECKING:
+    from visionlog.config import LoggerConfig
 
 from visionlog.enrichers.network import get_public_ip, get_geo_info, NetworkEnricher  # noqa: F401
 from visionlog.enrichers.device import get_device_info, DeviceEnricher  # noqa: F401
@@ -107,7 +110,8 @@ def configure_visionlog(renderer=None, extra_processors=None) -> None:
 
 
 def get_logger(
-    service_name="visionlog",
+    config: Optional["LoggerConfig"] = None,
+    service_name: str = "visionlog",
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
     ip_address: Union[bool, str, None] = None,
@@ -122,6 +126,22 @@ def get_logger(
     """
     Creates a structured logger with optional default fields.
 
+    Accepts either a :class:`~visionlog.LoggerConfig` instance (via the
+    ``config`` parameter) or individual keyword arguments.  When ``config``
+    is provided its fields take precedence over any matching keyword
+    arguments, enabling reusable, object-based configuration.
+
+    For backward compatibility, passing a plain string as the first positional
+    argument is still supported and is treated as ``service_name``::
+
+        # New config-based usage
+        from visionlog import get_logger, LoggerConfig
+        logger = get_logger(config=LoggerConfig(service_name="my-app"))
+
+        # Legacy positional / keyword usage (still supported)
+        logger = get_logger("my-app")
+        logger = get_logger(service_name="my-app")
+
     .. warning::
         **PII / Privacy Notice**: This library can enrich log records with
         IP addresses, geo-location data (city, region, country, timezone, ISP),
@@ -135,6 +155,8 @@ def get_logger(
           collecting this data, have notified users, and have reviewed your
           compliance obligations.
 
+    - `config`: Optional :class:`~visionlog.LoggerConfig` instance.  When
+      provided, its fields override the corresponding keyword arguments.
     - `privacy_mode`: When ``True`` (default), disables all PII enrichment —
       IP lookup, geo-location lookup, and device detection are silently skipped
       regardless of ``ip_address``, ``geo_info``, and ``device_info``.
@@ -163,9 +185,40 @@ def get_logger(
       :class:`structlog.stdlib.BoundLogger`.
     """
 
-    configure_visionlog()
+    # Backward compat: allow get_logger("my-app") — treat positional string as
+    # service_name and clear config so the kwargs path is used.
+    if isinstance(config, str):
+        if service_name != "visionlog":
+            import warnings
+            warnings.warn(
+                "Both a positional string and 'service_name' were provided to "
+                "get_logger(); the positional string takes precedence. "
+                "Use get_logger(service_name=...) or get_logger(config=...) "
+                "to avoid ambiguity.",
+                stacklevel=2,
+            )
+        service_name = config
+        config = None
+
+    # When a LoggerConfig is provided, its fields take precedence.
+    renderer = None
+    environment: Optional[str] = None
+    if config is not None:
+        service_name = config.service_name
+        user_id = config.user_id
+        session_id = config.session_id
+        privacy_mode = config.privacy_mode
+        disable_network = config.disable_network
+        enrichers = list(config.enrichers)
+        renderer = config.renderer
+        environment = config.environment
+
+    configure_visionlog(renderer=renderer)
 
     logger = structlog.get_logger(service=service_name)
+
+    if environment:
+        logger = logger.bind(environment=environment)
 
     # Attach user metadata if provided
     if user_id:

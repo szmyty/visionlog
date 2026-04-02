@@ -17,6 +17,7 @@ from visionlog.visionlog import (
     configure_visionlog,
     Enricher,
 )
+from visionlog.config import LoggerConfig
 import visionlog.visionlog as vl_module
 
 
@@ -451,3 +452,126 @@ def test_enricher_exported_from_package():
     """Verifies that Enricher is accessible from the top-level visionlog package."""
     from visionlog import Enricher as TopLevelEnricher
     assert TopLevelEnricher is Enricher
+
+
+# ---------------------------------------------------------------------------
+# LoggerConfig-based usage tests
+# ---------------------------------------------------------------------------
+
+def test_get_logger_with_config_basic():
+    """Verifies that get_logger accepts a LoggerConfig and creates a logger."""
+    config = LoggerConfig(service_name="config-app")
+    logger = get_logger(config=config)
+    assert logger is not None
+
+
+def test_get_logger_with_config_service_name():
+    """Verifies that config.service_name is used as the service field."""
+    config = LoggerConfig(service_name="my-service")
+    logger = get_logger(config=config)
+    assert logger._initial_values.get("service") == "my-service"
+
+
+def test_get_logger_with_config_user_id():
+    """Verifies that config.user_id is bound to the logger."""
+    config = LoggerConfig(service_name="svc", user_id="cfg_user")
+    logger = get_logger(config=config)
+    assert logger._context.get("user_id") == "cfg_user"
+
+
+def test_get_logger_with_config_session_id():
+    """Verifies that config.session_id is bound to the logger."""
+    config = LoggerConfig(service_name="svc", session_id="cfg_sess")
+    logger = get_logger(config=config)
+    assert logger._context.get("session_id") == "cfg_sess"
+
+
+def test_get_logger_with_config_environment():
+    """Verifies that config.environment is bound to the logger when provided."""
+    config = LoggerConfig(service_name="svc", environment="production")
+    logger = get_logger(config=config)
+    assert logger._context.get("environment") == "production"
+
+
+def test_get_logger_with_config_environment_none_not_bound():
+    """Verifies that environment is not bound when config.environment is None."""
+    config = LoggerConfig(service_name="svc")
+    logger = get_logger(config=config)
+    assert "environment" not in logger._context
+
+
+def test_get_logger_with_config_privacy_mode_true_skips_enrichers():
+    """Verifies that config.privacy_mode=True prevents PII enrichment."""
+    with patch("visionlog.enrichers.network.get_public_ip") as mock_ip:
+        config = LoggerConfig(service_name="svc", privacy_mode=True)
+        logger = get_logger(config=config, ip_address=True)
+        mock_ip.assert_not_called()
+    assert "ip_address" not in logger._context
+
+
+def test_get_logger_with_config_privacy_mode_false_allows_enrichment():
+    """Verifies that config.privacy_mode=False enables PII enrichment."""
+    with patch("visionlog.enrichers.network.get_public_ip", return_value="1.2.3.4") as mock_ip:
+        config = LoggerConfig(service_name="svc", privacy_mode=False)
+        logger = get_logger(config=config, ip_address=True)
+        mock_ip.assert_called_once()
+    assert logger._context.get("ip_address") == "1.2.3.4"
+
+
+def test_get_logger_with_config_disable_network():
+    """Verifies that config.disable_network=True prevents HTTP calls."""
+    with patch("visionlog.enrichers.network.get_public_ip") as mock_ip:
+        config = LoggerConfig(service_name="svc", privacy_mode=False, disable_network=True)
+        logger = get_logger(config=config, ip_address=True)
+        mock_ip.assert_not_called()
+    assert "ip_address" not in logger._context
+
+
+def test_get_logger_with_config_enrichers():
+    """Verifies that config.enrichers are applied to the logger."""
+    class _TagEnricher:
+        def enrich(self, logger):
+            return logger.bind(tagged_by="config")
+
+    config = LoggerConfig(service_name="svc", enrichers=[_TagEnricher()])
+    logger = get_logger(config=config)
+    assert logger._context.get("tagged_by") == "config"
+
+
+def test_get_logger_with_config_overrides_kwargs():
+    """Verifies that config values override matching keyword arguments."""
+    config = LoggerConfig(service_name="config-name", user_id="config-user")
+    logger = get_logger(config=config, service_name="kwarg-name", user_id="kwarg-user")
+    assert logger._context.get("service") == "config-name"
+    assert logger._context.get("user_id") == "config-user"
+
+
+def test_get_logger_with_config_renderer():
+    """Verifies that config.renderer is passed to configure_visionlog."""
+    import structlog as _structlog
+
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        custom_renderer = _structlog.dev.ConsoleRenderer()
+        config = LoggerConfig(service_name="svc", renderer=custom_renderer)
+        with patch("visionlog.visionlog.configure_visionlog", wraps=configure_visionlog) as mock_cfg:
+            get_logger(config=config)
+        mock_cfg.assert_called_once_with(renderer=custom_renderer)
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_get_logger_backward_compat_positional_string():
+    """Verifies backward compat: get_logger('my-app') still treats first arg as service_name."""
+    logger = get_logger("legacy-app")
+    assert logger._initial_values.get("service") == "legacy-app"
+
+
+def test_get_logger_kwargs_still_work_without_config():
+    """Verifies that individual keyword arguments still work when config is not provided."""
+    logger = get_logger(service_name="kwarg-app", user_id="kwarg-user", session_id="kwarg-sess")
+    assert logger._context.get("service") == "kwarg-app"
+    assert logger._context.get("user_id") == "kwarg-user"
+    assert logger._context.get("session_id") == "kwarg-sess"
+
