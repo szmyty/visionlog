@@ -132,3 +132,30 @@ def test_loggerconfig_enrichers_satisfy_protocol():
 def test_loggerconfig_exported_from_package():
     """Verifies that LoggerConfig is accessible from the top-level visionlog package."""
     assert TopLevelLoggerConfig is LoggerConfig
+
+
+# ---------------------------------------------------------------------------
+# extra_processors field
+# ---------------------------------------------------------------------------
+
+def test_loggerconfig_extra_processors_default_is_none():
+    """Verifies that extra_processors defaults to None."""
+    cfg = LoggerConfig(service_name="svc")
+    assert cfg.extra_processors is None
+
+
+def test_loggerconfig_extra_processors_populated():
+    """Verifies that extra_processors can be set to a list of callables."""
+    def my_processor(logger, method_name, event_dict):
+        return event_dict
+
+    cfg = LoggerConfig(service_name="svc", extra_processors=[my_processor])
+    assert cfg.extra_processors is not None
+    assert len(cfg.extra_processors) == 1
+    assert cfg.extra_processors[0] is my_processor
+
+
+def test_loggerconfig_extra_processors_empty_list():
+    """Verifies that extra_processors can be set to an empty list."""
+    cfg = LoggerConfig(service_name="svc", extra_processors=[])
+    assert cfg.extra_processors == []

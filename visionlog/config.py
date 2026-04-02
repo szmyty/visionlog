@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from visionlog.visionlog import Enricher
+from visionlog.visionlog import Enricher, Processor
 
 
 @dataclass
@@ -30,6 +30,10 @@ class LoggerConfig:
         renderer: Optional structlog processor used as the final renderer.
             When provided, takes precedence over ``renderer_name``.
             When ``None`` the renderer selected by ``renderer_name`` is used.
+        extra_processors: Optional list of additional structlog processors
+            injected into the pipeline after the core processors and before
+            the renderer.  Use this to extend the processor pipeline with
+            custom logic without replacing the built-in defaults.
     """
 
     service_name: str
@@ -41,3 +45,4 @@ class LoggerConfig:
     environment: Optional[str] = None
     renderer_name: str = "json"
     renderer: Optional[object] = None
+    extra_processors: Optional[List[Processor]] = None

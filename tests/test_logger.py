@@ -557,12 +557,53 @@ def test_get_logger_with_config_renderer():
         config = LoggerConfig(service_name="svc", renderer=custom_renderer)
         with patch("visionlog.visionlog.configure_visionlog", wraps=configure_visionlog) as mock_cfg:
             get_logger(config=config)
-        mock_cfg.assert_called_once_with(renderer=custom_renderer, renderer_name="json")
+        mock_cfg.assert_called_once_with(renderer=custom_renderer, renderer_name="json", extra_processors=None)
     finally:
         vl_module._CONFIGURED = original
 
 
-def test_get_logger_backward_compat_positional_string():
+def test_get_logger_with_config_extra_processors():
+    """Verifies that config.extra_processors is passed to configure_visionlog."""
+    import structlog as _structlog
+
+    def my_processor(logger, method_name, event_dict):
+        event_dict["custom"] = True
+        return event_dict
+
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        config = LoggerConfig(service_name="svc", extra_processors=[my_processor])
+        with patch("visionlog.visionlog.configure_visionlog", wraps=configure_visionlog) as mock_cfg:
+            get_logger(config=config)
+        mock_cfg.assert_called_once_with(renderer=None, renderer_name="json", extra_processors=[my_processor])
+    finally:
+        vl_module._CONFIGURED = original
+
+
+def test_get_logger_config_extra_processors_in_pipeline():
+    """Verifies that config.extra_processors are placed before the renderer in the pipeline."""
+    import structlog as _structlog
+
+    def my_processor(logger, method_name, event_dict):
+        return event_dict
+
+    original = vl_module._CONFIGURED
+    try:
+        vl_module._CONFIGURED = False
+        config = LoggerConfig(service_name="svc", extra_processors=[my_processor])
+        with patch("structlog.configure") as mock_configure:
+            get_logger(config=config)
+        call_processors = mock_configure.call_args[1]["processors"]
+        renderer = call_processors[-1]
+        assert isinstance(renderer, _structlog.processors.JSONRenderer)
+        assert my_processor in call_processors
+        assert call_processors.index(my_processor) < call_processors.index(renderer)
+    finally:
+        vl_module._CONFIGURED = original
+
+
+
     """Verifies backward compat: get_logger('my-app') still treats first arg as service_name."""
     logger = get_logger("legacy-app")
     assert logger._initial_values.get("service") == "legacy-app"
