@@ -56,7 +56,28 @@ logger.warning("Suspicious activity detected", ip="192.168.1.1")
 logger.error("Server crashed!", error_code=500)
 ```
 
-### **2. CLI Usage**
+### **2. Config-Based Usage**
+
+Group all logger options into a reusable `LoggerConfig` object and pass it to `get_logger`:
+
+```python
+from visionlog import get_logger, LoggerConfig
+
+config = LoggerConfig(
+    service_name="my-app",
+    user_id="user_42",
+    session_id="sess_001",
+    environment="production",
+)
+
+logger = get_logger(config=config)
+
+logger.info("User login event", action="login")
+```
+
+`LoggerConfig` supports the same options as the individual keyword arguments.  Keyword arguments are still fully supported when `config` is not provided.
+
+### **3. CLI Usage**
 
 You can also log messages directly from the command line:
 
