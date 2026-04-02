@@ -1,0 +1,38 @@
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+from visionlog.visionlog import Enricher
+
+
+@dataclass
+class LoggerConfig:
+    """Structured configuration object for :func:`~visionlog.get_logger`.
+
+    Group all logger-creation options into a single, reusable configuration
+    object.  Pass an instance to :func:`~visionlog.get_logger` instead of
+    (or in addition to) individual keyword arguments.
+
+    Attributes:
+        service_name: Identifies the service or application emitting logs.
+        user_id: Optional user identity to bind to every log record.
+        session_id: Optional session identifier to bind to every log record.
+        privacy_mode: When ``True`` (default), disables all PII enrichment
+            (IP lookup, geo-location, device detection).
+        disable_network: When ``True``, skips all outbound HTTP calls used
+            for IP/geo enrichment.  Useful in CI or air-gapped environments.
+        enrichers: Optional list of :class:`~visionlog.Enricher` instances
+            applied after built-in enrichment.
+        environment: Optional deployment environment label (e.g.
+            ``"production"``, ``"staging"``).
+        renderer: Optional structlog processor used as the final renderer.
+            When ``None`` the default JSON renderer is used.
+    """
+
+    service_name: str
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    privacy_mode: bool = True
+    disable_network: bool = False
+    enrichers: List[Enricher] = field(default_factory=list)
+    environment: Optional[str] = None
+    renderer: Optional[object] = None
