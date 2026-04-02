@@ -2,7 +2,7 @@ import threading
 import structlog
 import orjson
 import uuid
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, Union, runtime_checkable
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Protocol, Union, runtime_checkable
 
 if TYPE_CHECKING:
     from visionlog.config import LoggerConfig
@@ -39,6 +39,13 @@ class Enricher(Protocol):
     ) -> structlog.stdlib.BoundLogger:
         """Enrich *logger* with additional context and return it."""
         ...
+
+
+#: Type alias for a structlog processor callable.
+#:
+#: A processor is any callable that accepts ``(logger, method_name, event_dict)``
+#: and returns a (possibly modified) ``event_dict``.
+Processor = Callable[..., Any]
 
 def serialize_json(record, *args, **kwargs) -> str:
     """Serialize logs using orjson for high-performance JSON output."""
@@ -229,6 +236,7 @@ def get_logger(
     renderer = None
     renderer_name: str = "json"
     environment: Optional[str] = None
+    extra_processors: Optional[List[Processor]] = None
     if config is not None:
         service_name = config.service_name
         user_id = config.user_id
@@ -239,8 +247,9 @@ def get_logger(
         renderer = config.renderer
         renderer_name = config.renderer_name
         environment = config.environment
+        extra_processors = config.extra_processors
 
-    configure_visionlog(renderer=renderer, renderer_name=renderer_name)
+    configure_visionlog(renderer=renderer, renderer_name=renderer_name, extra_processors=extra_processors)
 
     logger = structlog.get_logger(service=service_name)
 
