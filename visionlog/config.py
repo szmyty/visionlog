@@ -22,6 +22,10 @@ class LoggerConfig:
             for IP/geo enrichment.  Useful in CI or air-gapped environments.
         enrichers: Optional list of :class:`~visionlog.Enricher` instances
             applied after built-in enrichment.
+        hostname: When ``True``, binds the machine hostname (from
+            :func:`socket.gethostname`) to every log record.  Useful in
+            distributed systems where the originating host must be
+            identifiable.
         environment: Optional deployment environment label (e.g.
             ``"production"``, ``"staging"``).
         renderer_name: Name of the built-in renderer to use.  Supported
@@ -42,6 +46,7 @@ class LoggerConfig:
     privacy_mode: bool = True
     disable_network: bool = False
     enrichers: List[Enricher] = field(default_factory=list)
+    hostname: bool = False
     environment: Optional[str] = None
     renderer_name: str = "json"
     renderer: Optional[object] = None

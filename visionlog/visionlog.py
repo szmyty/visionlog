@@ -1,3 +1,4 @@
+import socket
 import threading
 import structlog
 import orjson
@@ -235,6 +236,7 @@ def get_logger(
     # When a LoggerConfig is provided, its fields take precedence.
     renderer = None
     renderer_name: str = "json"
+    hostname: bool = False
     environment: Optional[str] = None
     extra_processors: Optional[List[Processor]] = None
     if config is not None:
@@ -246,12 +248,16 @@ def get_logger(
         enrichers = list(config.enrichers)
         renderer = config.renderer
         renderer_name = config.renderer_name
+        hostname = config.hostname
         environment = config.environment
         extra_processors = config.extra_processors
 
     configure_visionlog(renderer=renderer, renderer_name=renderer_name, extra_processors=extra_processors)
 
     logger = structlog.get_logger(service=service_name)
+
+    if hostname:
+        logger = logger.bind(hostname=socket.gethostname())
 
     if environment:
         logger = logger.bind(environment=environment)

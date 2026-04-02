@@ -500,6 +500,21 @@ def test_get_logger_with_config_environment_none_not_bound():
     assert "environment" not in logger._context
 
 
+def test_get_logger_with_config_hostname_true():
+    """Verifies that config.hostname=True binds the machine hostname."""
+    config = LoggerConfig(service_name="svc", hostname=True)
+    with patch("socket.gethostname", return_value="test-host"):
+        logger = get_logger(config=config)
+    assert logger._context.get("hostname") == "test-host"
+
+
+def test_get_logger_with_config_hostname_false_not_bound():
+    """Verifies that hostname is not bound when config.hostname is False."""
+    config = LoggerConfig(service_name="svc", hostname=False)
+    logger = get_logger(config=config)
+    assert "hostname" not in logger._context
+
+
 def test_get_logger_with_config_privacy_mode_true_skips_enrichers():
     """Verifies that config.privacy_mode=True prevents PII enrichment."""
     with patch("visionlog.enrichers.network.get_public_ip") as mock_ip:
