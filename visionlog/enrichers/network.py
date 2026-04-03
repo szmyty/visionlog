@@ -1,10 +1,12 @@
 """Network enrichment module: public IP and geo-location logic."""
 import functools
-import warnings
+import logging
 
 import httpx
 import structlog
 from typing import Dict, Optional, Union
+
+_logger = logging.getLogger("visionlog")
 
 
 @functools.lru_cache(maxsize=1)
@@ -25,7 +27,7 @@ def get_public_ip() -> Optional[str]:
     try:
         return httpx.get("https://api64.ipify.org?format=json", timeout=5.0).json()["ip"]
     except (httpx.RequestError, httpx.HTTPStatusError, KeyError, ValueError) as error:
-        warnings.warn(f"Failed to fetch public IP: {error}")
+        _logger.warning("Failed to fetch public IP: %s", error)
         return None
 
 
@@ -49,7 +51,7 @@ def get_geo_info(ip: str, timeout: float = 5.0) -> Dict[str, str]:
             "org": response.get("org", ""),  # ISP / Organization
         }
     except (httpx.RequestError, httpx.HTTPStatusError, KeyError, ValueError) as error:
-        warnings.warn(f"Failed to fetch geo info for IP {ip}: {error}")
+        _logger.warning("Failed to fetch geo info for IP %s: %s", ip, error)
         return {}
 
 
