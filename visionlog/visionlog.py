@@ -49,7 +49,7 @@ class Enricher(Protocol):
 #: and returns a (possibly modified) ``event_dict``.
 Processor = Callable[..., Any]
 
-def serialize_json(record, *args, **kwargs) -> str:
+def serialize_json(record: Any) -> str:
     """Serialize logs using orjson for high-performance JSON output.
 
     Falls back to ``str(record)`` when orjson cannot serialize the record so
