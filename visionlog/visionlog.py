@@ -178,7 +178,7 @@ def get_logger(
     device_info: bool = False,
     user_agent: Optional[str] = None,
     geo_info: bool = False,
-    enable_tracing: Any = _UNSET,
+    enable_tracing: bool = _UNSET,  # type: ignore[assignment]
     privacy_mode: bool = True,
     disable_network: bool = False,
     enrichers: Optional[List[Enricher]] = None,
