@@ -1,5 +1,4 @@
 """Unit tests for visionlog.enrichers.network module."""
-import warnings
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -157,8 +156,7 @@ def test_network_enricher_geo_skipped_when_ip_fails():
         "visionlog.enrichers.network.httpx.get",
         side_effect=httpx.RequestError("timeout"),
     ):
-        with warnings.catch_warnings(record=True):
-            warnings.simplefilter("always")
+        with patch("visionlog.enrichers.network._logger"):
             logger = get_logger()
             enricher = NetworkEnricher(ip=True, geo=True)
             logger = enricher.enrich(logger)

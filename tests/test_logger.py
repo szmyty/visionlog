@@ -1,6 +1,5 @@
 """Unit tests for visionlog core logging functions."""
 import json
-import warnings
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -117,54 +116,50 @@ def test_get_device_info_missing_package_no_agent_ok():
 
 
 def test_get_public_ip_failure():
-    """Mocks a network failure and verifies graceful fallback to None with a warning."""
+    """Mocks a network failure and verifies graceful fallback to None with a log warning."""
     get_public_ip.cache_clear()
     with patch("visionlog.enrichers.network.httpx.get", side_effect=httpx.RequestError("network error")):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with patch("visionlog.enrichers.network._logger") as mock_logger:
             result = get_public_ip()
     assert result is None
-    assert len(caught) == 1
-    assert "Failed to fetch public IP" in str(caught[0].message)
+    mock_logger.warning.assert_called_once()
+    assert "Failed to fetch public IP" in mock_logger.warning.call_args[0][0]
 
 
 def test_get_public_ip_missing_key():
-    """Mocks a missing key in the response and verifies graceful fallback to None with a warning."""
+    """Mocks a missing key in the response and verifies graceful fallback to None with a log warning."""
     get_public_ip.cache_clear()
     mock_response = MagicMock()
     mock_response.json.return_value = {}  # Missing "ip" key
     with patch("visionlog.enrichers.network.httpx.get", return_value=mock_response):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with patch("visionlog.enrichers.network._logger") as mock_logger:
             result = get_public_ip()
     assert result is None
-    assert len(caught) == 1
-    assert "Failed to fetch public IP" in str(caught[0].message)
+    mock_logger.warning.assert_called_once()
+    assert "Failed to fetch public IP" in mock_logger.warning.call_args[0][0]
 
 
 def test_get_geo_info_failure():
-    """Mocks a network failure for geo info and verifies fallback to empty dict with a warning."""
+    """Mocks a network failure for geo info and verifies fallback to empty dict with a log warning."""
     with patch("visionlog.enrichers.network.httpx.get", side_effect=httpx.RequestError("timeout")):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with patch("visionlog.enrichers.network._logger") as mock_logger:
             result = get_geo_info("1.2.3.4")
     assert result == {}
-    assert len(caught) == 1
-    assert "Failed to fetch geo info" in str(caught[0].message)
-    assert "1.2.3.4" in str(caught[0].message)
+    mock_logger.warning.assert_called_once()
+    assert "Failed to fetch geo info" in mock_logger.warning.call_args[0][0]
+    assert "1.2.3.4" in mock_logger.warning.call_args[0][1]
 
 
 def test_get_geo_info_invalid_json():
-    """Mocks an invalid JSON response for geo info and verifies fallback to empty dict with a warning."""
+    """Mocks an invalid JSON response for geo info and verifies fallback to empty dict with a log warning."""
     mock_response = MagicMock()
     mock_response.json.side_effect = ValueError("invalid JSON")
     with patch("visionlog.enrichers.network.httpx.get", return_value=mock_response):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with patch("visionlog.enrichers.network._logger") as mock_logger:
             result = get_geo_info("1.2.3.4")
     assert result == {}
-    assert len(caught) == 1
-    assert "Failed to fetch geo info" in str(caught[0].message)
+    mock_logger.warning.assert_called_once()
+    assert "Failed to fetch geo info" in mock_logger.warning.call_args[0][0]
 
 
 def test_privacy_mode_true_skips_ip_lookup():

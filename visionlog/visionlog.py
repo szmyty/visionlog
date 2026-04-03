@@ -246,13 +246,11 @@ def get_logger(
     # service_name and clear config so the kwargs path is used.
     if isinstance(config, str):
         if service_name != "visionlog":
-            import warnings
-            warnings.warn(
+            logging.getLogger("visionlog").warning(
                 "Both a positional string and 'service_name' were provided to "
                 "get_logger(); the positional string takes precedence. "
                 "Use get_logger(service_name=...) or get_logger(config=...) "
-                "to avoid ambiguity.",
-                stacklevel=2,
+                "to avoid ambiguity."
             )
         service_name = config
         config = None
