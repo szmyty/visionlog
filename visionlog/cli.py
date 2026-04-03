@@ -73,11 +73,10 @@ def log(message, service_name, level, user_id, session_id, no_privacy, ip, geo) 
             session_id=session_id,
             privacy_mode=not no_privacy,
         )
-        ip_address = True if ip else None
-        logger = get_logger(config=config, ip_address=ip_address, geo_info=geo)
+        logger = get_logger(config=config, ip_address=ip, geo_info=geo)
         getattr(logger, level)(message)
     except Exception as e:
-        click.echo(str(e), err=True)
+        click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 

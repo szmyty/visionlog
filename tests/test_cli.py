@@ -133,13 +133,13 @@ def test_cli_ip_flag():
 
 
 def test_cli_no_ip_flag():
-    """Validates --no-ip passes ip_address=None to get_logger."""
+    """Validates --no-ip passes ip_address=False to get_logger."""
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger) as mock_get:
         runner = CliRunner()
         result = runner.invoke(log, ["--no-ip", "--message", "event"])
     assert result.exit_code == 0
-    assert mock_get.call_args.kwargs["ip_address"] is None
+    assert mock_get.call_args.kwargs["ip_address"] is False
 
 
 def test_cli_geo_flag():
@@ -170,7 +170,7 @@ def test_cli_error_handling():
         runner = CliRunner(mix_stderr=True)
         result = runner.invoke(log, ["--message", "event"])
     assert result.exit_code == 1
-    assert "something went wrong" in result.output
+    assert "Error: something went wrong" in result.output
 
 
 def test_cli_invalid_level():
