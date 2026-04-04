@@ -29,6 +29,7 @@ def test_loggerconfig_defaults():
     assert cfg.environment is None
     assert cfg.renderer_name == "json"
     assert cfg.renderer is None
+    assert cfg.http_timeout == 5.0
 
 
 def test_loggerconfig_missing_service_name_raises():
@@ -203,3 +204,25 @@ def test_loggerconfig_id_generator_lambda():
     cfg = LoggerConfig(service_name="svc", id_generator=sequential_id)
     assert cfg.id_generator() == "id-1"
     assert cfg.id_generator() == "id-2"
+
+
+# ---------------------------------------------------------------------------
+# http_timeout field
+# ---------------------------------------------------------------------------
+
+def test_loggerconfig_http_timeout_default():
+    """Verifies that http_timeout defaults to 5.0."""
+    cfg = LoggerConfig(service_name="svc")
+    assert cfg.http_timeout == 5.0
+
+
+def test_loggerconfig_http_timeout_custom():
+    """Verifies that http_timeout can be set to a custom value."""
+    cfg = LoggerConfig(service_name="svc", http_timeout=10.0)
+    assert cfg.http_timeout == 10.0
+
+
+def test_loggerconfig_http_timeout_low_value():
+    """Verifies that http_timeout accepts low values (e.g. for tests)."""
+    cfg = LoggerConfig(service_name="svc", http_timeout=0.5)
+    assert cfg.http_timeout == 0.5

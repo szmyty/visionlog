@@ -184,3 +184,41 @@ def test_network_enricher_exported_from_package():
     from visionlog import NetworkEnricher as TopLevel
 
     assert TopLevel is NetworkEnricher
+
+
+# ---------------------------------------------------------------------------
+# get_public_ip() timeout tests
+# ---------------------------------------------------------------------------
+
+
+def test_get_public_ip_uses_default_timeout():
+    """Verifies that get_public_ip uses the default 5.0s timeout."""
+    get_public_ip.cache_clear()
+    with patch("visionlog.enrichers.network._fetch_json", return_value={"ip": "1.2.3.4"}) as mock_fetch:
+        get_public_ip()
+    _, kwargs = mock_fetch.call_args
+    assert kwargs.get("timeout") == 5.0
+
+
+def test_get_public_ip_uses_custom_timeout():
+    """Verifies that get_public_ip passes a custom timeout to _fetch_json."""
+    get_public_ip.cache_clear()
+    with patch("visionlog.enrichers.network._fetch_json", return_value={"ip": "1.2.3.4"}) as mock_fetch:
+        get_public_ip(timeout=2.0)
+    _, kwargs = mock_fetch.call_args
+    assert kwargs.get("timeout") == 2.0
+
+
+# ---------------------------------------------------------------------------
+# NetworkEnricher timeout propagation
+# ---------------------------------------------------------------------------
+
+
+def test_network_enricher_passes_timeout_to_get_public_ip():
+    """Verifies that NetworkEnricher passes its timeout to get_public_ip."""
+    get_public_ip.cache_clear()
+    with patch("visionlog.enrichers.network._fetch_json", return_value={"ip": "10.0.0.5"}) as mock_fetch:
+        enricher = NetworkEnricher(ip=True, geo=False, timeout=3.0)
+        enricher.enrich(get_logger())
+    first_call_kwargs = mock_fetch.call_args_list[0][1]
+    assert first_call_kwargs.get("timeout") == 3.0

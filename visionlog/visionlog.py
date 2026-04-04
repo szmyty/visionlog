@@ -272,6 +272,7 @@ def get_logger(
     environment: Optional[str] = None
     extra_processors: Optional[List[Processor]] = None
     id_generator: Optional[Callable[[], str]] = None
+    http_timeout: float = 5.0
     if config is not None:
         service_name = config.service_name
         user_id = config.user_id
@@ -285,6 +286,7 @@ def get_logger(
         environment = config.environment
         extra_processors = config.extra_processors
         id_generator = config.id_generator
+        http_timeout = config.http_timeout
 
     configure_visionlog(renderer=renderer, renderer_name=renderer_name, extra_processors=extra_processors, id_generator=id_generator)
 
@@ -310,10 +312,10 @@ def get_logger(
 
         # IP address and geo-location enrichment
         if ip_address is True and not disable_network:
-            legacy_enrichers.append(NetworkEnricher(ip=True, geo=geo_info))
+            legacy_enrichers.append(NetworkEnricher(ip=True, geo=geo_info, timeout=http_timeout))
         elif isinstance(ip_address, str):
             legacy_enrichers.append(
-                NetworkEnricher(ip=ip_address, geo=geo_info and not disable_network)
+                NetworkEnricher(ip=ip_address, geo=geo_info and not disable_network, timeout=http_timeout)
             )
 
         # Device information enrichment

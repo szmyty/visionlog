@@ -24,13 +24,16 @@ def _fetch_json(url: str, timeout: float) -> dict:
 
 
 @functools.lru_cache(maxsize=1)
-def get_public_ip() -> Optional[str]:
+def get_public_ip(timeout: float = 5.0) -> Optional[str]:
     """Fetches the user's public IP address.
 
     The result is cached after the first successful (or failed) call so that
     repeated calls within the same process do not incur additional HTTP
     round-trips.  Call :func:`get_public_ip.cache_clear` to invalidate the
     cache if needed.
+
+    Args:
+        timeout: HTTP request timeout in seconds.  Defaults to ``5.0``.
 
     .. warning::
         **PII / Privacy Notice**: The public IP address is Personally Identifiable
@@ -39,7 +42,7 @@ def get_public_ip() -> Optional[str]:
         set ``privacy_mode=False`` in :func:`~visionlog.visionlog.get_logger`.
     """
     try:
-        return _fetch_json("https://api64.ipify.org?format=json", timeout=5.0)["ip"]
+        return _fetch_json("https://api64.ipify.org?format=json", timeout=timeout)["ip"]
     except (httpx.RequestError, httpx.HTTPStatusError, KeyError, ValueError) as error:
         _logger.warning("Failed to fetch public IP: %s", error)
         return None
@@ -83,9 +86,8 @@ class NetworkEnricher:
             call.  ``False`` (default) disables IP enrichment entirely.
         geo: When ``True`` (and an IP was resolved), fetch geo-location data
             (city, region, country, timezone, org) and bind all fields.
-        timeout: HTTP timeout in seconds used for geo-location requests.
-            The IP lookup uses a fixed 5-second timeout because its result is
-            cached across calls.
+        timeout: HTTP timeout in seconds used for all outbound network calls
+            (both IP lookup and geo-location requests).  Defaults to ``5.0``.
 
     Example::
 
@@ -109,7 +111,7 @@ class NetworkEnricher:
         """Enrich *logger* with IP and/or geo data and return it."""
         resolved_ip: Optional[str] = None
         if self.ip is True:
-            resolved_ip = get_public_ip()
+            resolved_ip = get_public_ip(self.timeout)
         elif isinstance(self.ip, str) and self.ip:
             resolved_ip = self.ip
 
