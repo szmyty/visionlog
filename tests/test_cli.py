@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from visionlog.cli import log
+from visionlog.cli import cli
 
 
 def test_cli_log_default_message():
@@ -11,7 +11,7 @@ def test_cli_log_default_message():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger):
         runner = CliRunner()
-        result = runner.invoke(log, [])
+        result = runner.invoke(cli, [])
     assert result.exit_code == 0
     mock_logger.info.assert_called_once_with("Hello, Visionlog!")
 
@@ -21,7 +21,7 @@ def test_cli_log_custom_message():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger):
         runner = CliRunner()
-        result = runner.invoke(log, ["--message", "test log entry"])
+        result = runner.invoke(cli, ["--message", "test log entry"])
     assert result.exit_code == 0
     mock_logger.info.assert_called_once_with("test log entry")
 
@@ -31,7 +31,7 @@ def test_cli_service_name():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger) as mock_get:
         runner = CliRunner()
-        result = runner.invoke(log, ["--service-name", "my-service", "--message", "hi"])
+        result = runner.invoke(cli, ["--service-name", "my-service", "--message", "hi"])
     assert result.exit_code == 0
     config = mock_get.call_args.kwargs["config"]
     assert config.service_name == "my-service"
@@ -42,7 +42,7 @@ def test_cli_default_service_name():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger) as mock_get:
         runner = CliRunner()
-        result = runner.invoke(log, [])
+        result = runner.invoke(cli, [])
     assert result.exit_code == 0
     config = mock_get.call_args.kwargs["config"]
     assert config.service_name == "visionlog"
@@ -53,7 +53,7 @@ def test_cli_log_level_warning():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger):
         runner = CliRunner()
-        result = runner.invoke(log, ["--level", "warning", "--message", "warn message"])
+        result = runner.invoke(cli, ["--level", "warning", "--message", "warn message"])
     assert result.exit_code == 0
     mock_logger.warning.assert_called_once_with("warn message")
 
@@ -63,7 +63,7 @@ def test_cli_log_level_error():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger):
         runner = CliRunner()
-        result = runner.invoke(log, ["--level", "error", "--message", "error message"])
+        result = runner.invoke(cli, ["--level", "error", "--message", "error message"])
     assert result.exit_code == 0
     mock_logger.error.assert_called_once_with("error message")
 
@@ -73,7 +73,7 @@ def test_cli_log_level_debug():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger):
         runner = CliRunner()
-        result = runner.invoke(log, ["--level", "debug", "--message", "debug message"])
+        result = runner.invoke(cli, ["--level", "debug", "--message", "debug message"])
     assert result.exit_code == 0
     mock_logger.debug.assert_called_once_with("debug message")
 
@@ -84,7 +84,7 @@ def test_cli_user_id_and_session_id():
     with patch("visionlog.cli.get_logger", return_value=mock_logger) as mock_get:
         runner = CliRunner()
         result = runner.invoke(
-            log,
+            cli,
             [
                 "--user-id",
                 "u123",
@@ -105,7 +105,7 @@ def test_cli_no_privacy_disables_privacy_mode():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger) as mock_get:
         runner = CliRunner()
-        result = runner.invoke(log, ["--no-privacy", "--message", "event"])
+        result = runner.invoke(cli, ["--no-privacy", "--message", "event"])
     assert result.exit_code == 0
     config = mock_get.call_args.kwargs["config"]
     assert config.privacy_mode is False
@@ -116,7 +116,7 @@ def test_cli_default_privacy_mode_is_true():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger) as mock_get:
         runner = CliRunner()
-        result = runner.invoke(log, ["--message", "event"])
+        result = runner.invoke(cli, ["--message", "event"])
     assert result.exit_code == 0
     config = mock_get.call_args.kwargs["config"]
     assert config.privacy_mode is True
@@ -127,7 +127,7 @@ def test_cli_ip_flag():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger) as mock_get:
         runner = CliRunner()
-        result = runner.invoke(log, ["--no-privacy", "--ip", "--message", "event"])
+        result = runner.invoke(cli, ["--no-privacy", "--ip", "--message", "event"])
     assert result.exit_code == 0
     assert mock_get.call_args.kwargs["ip_address"] is True
 
@@ -137,7 +137,7 @@ def test_cli_no_ip_flag():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger) as mock_get:
         runner = CliRunner()
-        result = runner.invoke(log, ["--no-ip", "--message", "event"])
+        result = runner.invoke(cli, ["--no-ip", "--message", "event"])
     assert result.exit_code == 0
     assert mock_get.call_args.kwargs["ip_address"] is False
 
@@ -147,7 +147,7 @@ def test_cli_geo_flag():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger) as mock_get:
         runner = CliRunner()
-        result = runner.invoke(log, ["--no-privacy", "--geo", "--message", "event"])
+        result = runner.invoke(cli, ["--no-privacy", "--geo", "--message", "event"])
     assert result.exit_code == 0
     assert mock_get.call_args.kwargs["geo_info"] is True
 
@@ -157,7 +157,7 @@ def test_cli_no_geo_flag():
     mock_logger = MagicMock()
     with patch("visionlog.cli.get_logger", return_value=mock_logger) as mock_get:
         runner = CliRunner()
-        result = runner.invoke(log, ["--no-geo", "--message", "event"])
+        result = runner.invoke(cli, ["--no-geo", "--message", "event"])
     assert result.exit_code == 0
     assert mock_get.call_args.kwargs["geo_info"] is False
 
@@ -168,7 +168,7 @@ def test_cli_error_handling():
         "visionlog.cli.get_logger", side_effect=RuntimeError("something went wrong")
     ):
         runner = CliRunner(mix_stderr=True)
-        result = runner.invoke(log, ["--message", "event"])
+        result = runner.invoke(cli, ["--message", "event"])
     assert result.exit_code == 1
     assert "Error: something went wrong" in result.output
 
@@ -176,14 +176,14 @@ def test_cli_error_handling():
 def test_cli_invalid_level():
     """Validates that an invalid log level is rejected by Click."""
     runner = CliRunner()
-    result = runner.invoke(log, ["--level", "trace"])
+    result = runner.invoke(cli, ["--level", "trace"])
     assert result.exit_code != 0
 
 
 def test_cli_help():
     """Validates that --help displays usage information for all options."""
     runner = CliRunner()
-    result = runner.invoke(log, ["--help"])
+    result = runner.invoke(cli, ["--help"])
     assert result.exit_code == 0
     assert "--message" in result.output
     assert "--service-name" in result.output
