@@ -9,6 +9,20 @@ from typing import Dict, Optional, Union
 _logger = logging.getLogger("visionlog")
 
 
+def _fetch_json(url: str, timeout: float) -> dict:
+    """Fetches *url* and returns the parsed JSON response as a dict.
+
+    Centralises all ``httpx`` usage so callers can be tested by mocking this
+    helper instead of patching ``httpx`` directly.
+
+    Raises:
+        httpx.RequestError: If a network or connection error occurs.
+        httpx.HTTPStatusError: If the server returns an HTTP error status.
+        ValueError: If the response body is not valid JSON.
+    """
+    return httpx.get(url, timeout=timeout).json()
+
+
 @functools.lru_cache(maxsize=1)
 def get_public_ip() -> Optional[str]:
     """Fetches the user's public IP address.
@@ -25,7 +39,7 @@ def get_public_ip() -> Optional[str]:
         set ``privacy_mode=False`` in :func:`~visionlog.visionlog.get_logger`.
     """
     try:
-        return httpx.get("https://api64.ipify.org?format=json", timeout=5.0).json()["ip"]
+        return _fetch_json("https://api64.ipify.org?format=json", timeout=5.0)["ip"]
     except (httpx.RequestError, httpx.HTTPStatusError, KeyError, ValueError) as error:
         _logger.warning("Failed to fetch public IP: %s", error)
         return None
@@ -42,7 +56,7 @@ def get_geo_info(ip: str, timeout: float = 5.0) -> Dict[str, str]:
         ``privacy_mode=False`` in :func:`~visionlog.visionlog.get_logger`.
     """
     try:
-        response = httpx.get(f"https://ipinfo.io/{ip}/json", timeout=timeout).json()
+        response = _fetch_json(f"https://ipinfo.io/{ip}/json", timeout=timeout)
         return {
             "city": response.get("city", ""),
             "region": response.get("region", ""),

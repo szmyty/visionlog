@@ -118,7 +118,7 @@ def test_get_device_info_missing_package_no_agent_ok():
 def test_get_public_ip_failure():
     """Mocks a network failure and verifies graceful fallback to None with a log warning."""
     get_public_ip.cache_clear()
-    with patch("visionlog.enrichers.network.httpx.get", side_effect=httpx.RequestError("network error")):
+    with patch("visionlog.enrichers.network._fetch_json", side_effect=httpx.RequestError("network error")):
         with patch("visionlog.enrichers.network._logger") as mock_logger:
             result = get_public_ip()
     assert result is None
@@ -129,9 +129,7 @@ def test_get_public_ip_failure():
 def test_get_public_ip_missing_key():
     """Mocks a missing key in the response and verifies graceful fallback to None with a log warning."""
     get_public_ip.cache_clear()
-    mock_response = MagicMock()
-    mock_response.json.return_value = {}  # Missing "ip" key
-    with patch("visionlog.enrichers.network.httpx.get", return_value=mock_response):
+    with patch("visionlog.enrichers.network._fetch_json", return_value={}):
         with patch("visionlog.enrichers.network._logger") as mock_logger:
             result = get_public_ip()
     assert result is None
@@ -141,7 +139,7 @@ def test_get_public_ip_missing_key():
 
 def test_get_geo_info_failure():
     """Mocks a network failure for geo info and verifies fallback to empty dict with a log warning."""
-    with patch("visionlog.enrichers.network.httpx.get", side_effect=httpx.RequestError("timeout")):
+    with patch("visionlog.enrichers.network._fetch_json", side_effect=httpx.RequestError("timeout")):
         with patch("visionlog.enrichers.network._logger") as mock_logger:
             result = get_geo_info("1.2.3.4")
     assert result == {}
@@ -152,9 +150,7 @@ def test_get_geo_info_failure():
 
 def test_get_geo_info_invalid_json():
     """Mocks an invalid JSON response for geo info and verifies fallback to empty dict with a log warning."""
-    mock_response = MagicMock()
-    mock_response.json.side_effect = ValueError("invalid JSON")
-    with patch("visionlog.enrichers.network.httpx.get", return_value=mock_response):
+    with patch("visionlog.enrichers.network._fetch_json", side_effect=ValueError("invalid JSON")):
         with patch("visionlog.enrichers.network._logger") as mock_logger:
             result = get_geo_info("1.2.3.4")
     assert result == {}
