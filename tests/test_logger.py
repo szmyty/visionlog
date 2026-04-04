@@ -3,8 +3,12 @@ import json
 from unittest.mock import patch, MagicMock
 
 import pytest
-import httpx
 import structlog
+
+try:
+    import httpx
+except ImportError:
+    httpx = None  # type: ignore[assignment]
 
 from visionlog.visionlog import (
     serialize_json,
@@ -117,6 +121,7 @@ def test_get_device_info_missing_package_no_agent_ok():
 
 def test_get_public_ip_failure():
     """Mocks a network failure and verifies graceful fallback to None with a log warning."""
+    pytest.importorskip("httpx")
     get_public_ip.cache_clear()
     with patch("visionlog.enrichers.network._fetch_json", side_effect=httpx.RequestError("network error")):
         with patch("visionlog.enrichers.network._logger") as mock_logger:
@@ -139,6 +144,7 @@ def test_get_public_ip_missing_key():
 
 def test_get_geo_info_failure():
     """Mocks a network failure for geo info and verifies fallback to empty dict with a log warning."""
+    pytest.importorskip("httpx")
     with patch("visionlog.enrichers.network._fetch_json", side_effect=httpx.RequestError("timeout")):
         with patch("visionlog.enrichers.network._logger") as mock_logger:
             result = get_geo_info("1.2.3.4")
