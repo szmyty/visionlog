@@ -65,7 +65,7 @@ from .visionlog import get_logger
     default=False,
     help="Fetch geo-location data for the IP address (requires --no-privacy).",
 )
-def log(message, service_name, level, user_id, session_id, no_privacy, ip, geo) -> None:
+def cli(message, service_name, level, user_id, session_id, no_privacy, ip, geo) -> None:
     try:
         config = LoggerConfig(
             service_name=service_name,
@@ -81,5 +81,5 @@ def log(message, service_name, level, user_id, session_id, no_privacy, ip, geo) 
 
 
 if __name__ == "__main__":
-    log()
+    cli()
 

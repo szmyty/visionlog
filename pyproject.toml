@@ -35,7 +35,7 @@ device = ["device-detector"]
 network = ["httpx"]
 
 [tool.poetry.scripts]
-visionlog-cli = "visionlog.cli:log"
+visionlog-cli = "visionlog.cli:cli"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4"
