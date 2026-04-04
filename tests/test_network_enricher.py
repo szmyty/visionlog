@@ -1,7 +1,8 @@
 """Unit tests for visionlog.enrichers.network module."""
+import pytest
 from unittest.mock import patch
 
-import httpx
+httpx = pytest.importorskip("httpx")
 
 from visionlog.enrichers.network import NetworkEnricher, get_geo_info, get_public_ip
 from visionlog.visionlog import Enricher, get_logger

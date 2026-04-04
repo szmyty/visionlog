@@ -2,9 +2,17 @@
 import functools
 import logging
 
-import httpx
 import structlog
 from typing import Dict, Optional, Union
+
+try:
+    import httpx
+    _HttpxRequestError: type = httpx.RequestError
+    _HttpxHTTPStatusError: type = httpx.HTTPStatusError
+except ImportError:
+    httpx = None  # type: ignore[assignment]
+    _HttpxRequestError = OSError
+    _HttpxHTTPStatusError = OSError
 
 _logger = logging.getLogger("visionlog")
 
@@ -16,10 +24,16 @@ def _fetch_json(url: str, timeout: float) -> dict:
     helper instead of patching ``httpx`` directly.
 
     Raises:
+        ImportError: If the ``httpx`` package is not installed.
         httpx.RequestError: If a network or connection error occurs.
         httpx.HTTPStatusError: If the server returns an HTTP error status.
         ValueError: If the response body is not valid JSON.
     """
+    if httpx is None:
+        raise ImportError(
+            "Network enrichment requires the 'httpx' package. "
+            "Install it with: pip install visionlog[network]"
+        )
     return httpx.get(url, timeout=timeout).json()
 
 
@@ -43,7 +57,7 @@ def get_public_ip(timeout: float = 5.0) -> Optional[str]:
     """
     try:
         return _fetch_json("https://api64.ipify.org?format=json", timeout=timeout)["ip"]
-    except (httpx.RequestError, httpx.HTTPStatusError, KeyError, ValueError) as error:
+    except (_HttpxRequestError, _HttpxHTTPStatusError, KeyError, ValueError) as error:
         _logger.warning("Failed to fetch public IP: %s", error)
         return None
 
@@ -67,7 +81,7 @@ def get_geo_info(ip: str, timeout: float = 5.0) -> Dict[str, str]:
             "timezone": response.get("timezone", ""),
             "org": response.get("org", ""),  # ISP / Organization
         }
-    except (httpx.RequestError, httpx.HTTPStatusError, KeyError, ValueError) as error:
+    except (_HttpxRequestError, _HttpxHTTPStatusError, KeyError, ValueError) as error:
         _logger.warning("Failed to fetch geo info for IP %s: %s", ip, error)
         return {}
 
