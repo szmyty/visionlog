@@ -70,13 +70,30 @@ def test_get_logger_otel_context_always_in_processor_chain():
 
 
 def test_get_logger_enable_tracing_param_accepted():
-    """enable_tracing parameter is accepted for backward compatibility and has no effect on the processor chain."""
-    import structlog as _structlog
+    """enable_tracing parameter emits DeprecationWarning and has no effect on the processor chain."""
+    import warnings
 
-    processors_before = _structlog.get_config()["processors"]
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        get_logger(enable_tracing=True)
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert "enable_tracing is deprecated" in str(w[0].message)
+        assert "1.0.0" in str(w[0].message)
 
-    get_logger(enable_tracing=True)
-    assert _structlog.get_config()["processors"] is processors_before
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        get_logger(enable_tracing=False)
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
 
-    get_logger(enable_tracing=False)
-    assert _structlog.get_config()["processors"] is processors_before
+
+def test_get_logger_no_warning_without_enable_tracing():
+    """No DeprecationWarning is emitted when enable_tracing is not passed."""
+    import warnings
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        get_logger()
+        deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert len(deprecation_warnings) == 0

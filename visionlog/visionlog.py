@@ -1,6 +1,7 @@
 import logging
 import socket
 import threading
+import warnings
 import structlog
 import orjson
 import uuid
@@ -11,6 +12,8 @@ if TYPE_CHECKING:
 
 from visionlog.enrichers.network import get_public_ip, get_geo_info, NetworkEnricher  # noqa: F401
 from visionlog.enrichers.device import get_device_info, DeviceEnricher  # noqa: F401
+
+_UNSET = object()
 
 
 @runtime_checkable
@@ -175,7 +178,7 @@ def get_logger(
     device_info: bool = False,
     user_agent: Optional[str] = None,
     geo_info: bool = False,
-    enable_tracing: bool = False,
+    enable_tracing: bool = _UNSET,  # type: ignore[assignment]
     privacy_mode: bool = True,
     disable_network: bool = False,
     enrichers: Optional[List[Enricher]] = None,
@@ -233,9 +236,9 @@ def get_logger(
     - `device_info`: If True, extracts detailed device data
     - `user_agent`: Custom user-agent string for parsing device details
     - `geo_info`: If True, fetches IP geo-location (city, country, ISP, timezone)
-    - `enable_tracing`: Deprecated since version 0.2.0. OpenTelemetry context is
-      now always injected automatically when a span is active; this parameter has
-      no effect and will be removed in a future release.
+    - `enable_tracing`: Deprecated since version 0.2.0 and will be removed in
+      1.0.0. OpenTelemetry context is now always injected automatically when a
+      span is active; this parameter has no effect.
     - `enrichers`: Optional list of :class:`Enricher` instances applied after
       all built-in enrichment.  Each enricher's :meth:`~Enricher.enrich` method
       is called in order, receiving and returning the
@@ -254,6 +257,13 @@ def get_logger(
             )
         service_name = config
         config = None
+
+    if enable_tracing is not _UNSET:
+        warnings.warn(
+            "enable_tracing is deprecated and will be removed in 1.0.0",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     # When a LoggerConfig is provided, its fields take precedence.
     renderer = None
