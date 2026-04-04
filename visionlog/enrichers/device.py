@@ -1,6 +1,7 @@
 """Device detection enricher for visionlog."""
 import platform
-import warnings
+
+__all__ = ["get_device_info", "DeviceEnricher"]
 from typing import Dict, Optional
 
 import structlog

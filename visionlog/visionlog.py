@@ -52,6 +52,16 @@ class Enricher(Protocol):
 #: and returns a (possibly modified) ``event_dict``.
 Processor = Callable[..., Any]
 
+__all__ = [
+    "Enricher",
+    "Processor",
+    "serialize_json",
+    "add_common_fields",
+    "add_otel_context",
+    "configure_visionlog",
+    "get_logger",
+]
+
 def serialize_json(record: Any) -> str:
     """Serialize logs using orjson for high-performance JSON output.
 
