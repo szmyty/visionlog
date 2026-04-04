@@ -247,6 +247,60 @@ task --list
 
 ---
 
+## 📐 **API Stability & Versioning Policy**
+
+### Public API
+
+The public API of Visionlog consists of everything exported in `__all__` from the top-level `visionlog` package:
+
+| Symbol | Kind | Description |
+|---|---|---|
+| `get_logger` | Function | Creates and returns a configured logger instance |
+| `configure_visionlog` | Function | Configures the global structlog pipeline |
+| `LoggerConfig` | Dataclass | Structured configuration object for `get_logger` |
+| `Enricher` | Protocol | Interface for custom log enrichers |
+| `Processor` | Protocol | Interface for custom structlog processors |
+| `NetworkEnricher` | Class | Built-in IP/geo enrichment |
+| `DeviceEnricher` | Class | Built-in device-detection enrichment |
+| `get_public_ip` | Function | Utility — fetches the public IP address |
+| `get_geo_info` | Function | Utility — fetches geo-location data for an IP |
+| `get_device_info` | Function | Utility — parses a User-Agent string |
+| `serialize_json` | Function | Utility — serialises a value to JSON bytes via `orjson` |
+| `add_common_fields` | Function | Built-in structlog processor — adds common metadata fields |
+| `add_otel_context` | Function | Built-in structlog processor — injects OpenTelemetry trace context |
+
+Any symbol **not** listed above (e.g. internal helpers inside sub-modules) is considered **private** and may change without notice.
+
+### Stability guarantees
+
+> ⚠️ **Visionlog is currently in Alpha** (`0.x.y`).  
+> The public API is stabilising but **breaking changes may still occur in minor version bumps** while the project is pre-1.0.
+
+| Phase | Guarantee |
+|---|---|
+| **0.x.y — Alpha/Beta** | The public API surface above is defined and intentional, but signatures and behaviour may change in any `0.x` release. Migration notes are always included in [CHANGELOG.md](CHANGELOG.md). |
+| **1.0.0 — Stable** | Full semantic versioning guarantees apply (see below). No breaking changes without a major version bump. |
+
+### Semantic versioning
+
+Visionlog follows [Semantic Versioning 2.0.0](https://semver.org/) (`MAJOR.MINOR.PATCH`):
+
+| Version component | When it is incremented |
+|---|---|
+| **MAJOR** (`X.y.z`) | Backwards-incompatible changes to the public API (e.g. removing or renaming exported symbols, changing function signatures in a breaking way). |
+| **MINOR** (`x.Y.z`) | New backwards-compatible functionality added to the public API (e.g. new exported symbols, new optional parameters with default values). |
+| **PATCH** (`x.y.Z`) | Backwards-compatible bug fixes that do not alter the public API contract. |
+
+Version numbers are managed automatically by [Commitizen](https://commitizen-tools.github.io/commitizen/) using [Conventional Commits](https://www.conventionalcommits.org/):
+
+- `fix:` commits trigger a **patch** bump.
+- `feat:` commits trigger a **minor** bump.
+- Commits with a `BREAKING CHANGE:` footer, or a `!` suffix (e.g. `feat!:`), trigger a **major** bump.
+
+Releases are tagged as `vMAJOR.MINOR.PATCH` (e.g. `v1.0.0`) and every release is accompanied by an entry in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
 ## 📜 **License**
 
 Visionlog is released under the **MIT License**.
