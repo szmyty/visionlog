@@ -228,9 +228,9 @@ task --list
 
 This project supports Dev Containers for a reproducible setup.
 
-Open in VS Code and select:
+Open in VS Code, then open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and select:
 
-"Reopen in Container"
+**Remote-Containers: Reopen in Container**
 
 ---
 
