@@ -224,6 +224,16 @@ task --list
 
 ---
 
+## 🐳 Development Environment
+
+This project supports Dev Containers for a reproducible setup.
+
+Open in VS Code, then open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and select:
+
+**Remote-Containers: Reopen in Container**
+
+---
+
 ## 🛠 **Development & Contribution**
 
 1. Clone the repository:
